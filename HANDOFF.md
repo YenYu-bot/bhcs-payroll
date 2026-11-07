@@ -76,7 +76,8 @@ state = {
     hire, leave, leaveSystem:'anniv'|'cal', yearEnd:'pay'|'defer', priorUsed, priorAsOf,
     sickPolicy:'prorate'|'none', voidPersonal, lateePolicy:'voidPerfect'|'deduct'|'annualOffset',
     lateGrace, lateUnit, lateFallback:'deduct'|'void',
-    sched:{ d0..d6:{ type:'work'|'none'|'rest'|'off', start,end, sStart,sEnd, wStart,wEnd } } }],
+    sched:{ tpl:{type,start,end,sStart,sEnd,wStart,wEnd},   // 快速排班範本
+            d0..d6:{ type:'work'|'none'|'rest'|'off', start,end, sStart,sEnd, wStart,wEnd, useTpl } } }],  // useTpl＝套用範本（值已複製進該日）
   months: { 'YYYY-MM': { [empId]: {
     att:{sick,menstrual,personal,family,paidLeave,extraHours},   // 單位：小時（手動額外輸入）
     days:[{date,wk,in,out,wh(分),punches,abnormal,kind,status,hours,manual}],  // 應出勤日曆
@@ -146,3 +147,4 @@ match /{document=**} { allow read, write: if false; }
 3. 人工審核、薪資紀錄、異動紀錄、密碼加密
 4. 每週七天彈性排班、計時工時輸入、特休抵扣遲到、自訂薪資項目（並修正計時員工表單未切換的 bug）
 5. 雲端同步（Firebase，端對端加密）
+6. 快速排班：排班表最上方「快速」列，勾選的日子套用（`applyTpl()`），未勾選手動輸入
