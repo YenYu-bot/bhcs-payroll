@@ -72,6 +72,8 @@ h2.vh{font-size:20px;margin:0 0 4px;letter-spacing:.3px}
 .slip-review{padding:10px 22px;background:#fffbea;border-bottom:1px solid var(--line);font-size:12.5px}
 .rv-tbl{width:100%;border-collapse:collapse}.rv-tbl td{padding:6px 6px;border-top:1px dashed var(--line);vertical-align:top}.rv-tbl td:first-child{width:70px}.rv-tbl td.num{font-family:var(--mono);text-align:right;width:80px}
 .rv-tbl .btn{margin-left:4px}
+.cloud-badge{font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;background:#e8f3ec;color:var(--pos);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cloud-badge.bad{background:var(--neg-wash);color:var(--neg)}
 input.tm{width:118px;padding:4px 3px;border:1px solid var(--line-strong);border-radius:6px;font-family:var(--mono);font-size:12px}
 .fi-row{display:grid;grid-template-columns:1.4fr 80px 1fr auto auto;gap:8px;align-items:center;margin-top:6px}
 .fi-row input,.fi-row select{padding:7px 9px;border:1px solid var(--line-strong);border-radius:7px;font-size:13.5px;min-width:0}
@@ -262,6 +264,8 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
 </nav>
 
 <main>
+<div id="cloudBanner" class="no-print" style="display:none;align-items:center;gap:12px;background:#fff4e5;border:1px solid #f0c27b;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13.5px">
+  <span id="cloudBannerTxt" style="flex:1"></span><button class="btn primary sm" onclick="cloudReload()">載入雲端版本</button><button class="btn ghost sm" onclick="cloudOverwrite()">以本機覆蓋雲端</button></div>
 
 <!-- 1. 員工設定 -->
 <section class="view on" id="v-emp">
@@ -276,6 +280,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
       </select>
     </label>
     <div class="spacer"></div>
+    <button class="btn ghost sm" onclick="openCloud()">☁ 雲端同步 <span id="cloudBadge" class="cloud-badge">未啟用</span></button>
     <button class="btn ghost sm" id="secBtn" onclick="openSec()">🔓 密碼保護</button>
     <button class="btn ghost sm" onclick="exportData()">匯出備份 (JSON)</button>
     <label class="btn ghost sm" style="margin:0">匯入備份<input type="file" accept=".json" hidden onchange="importData(this)"></label>
@@ -635,6 +640,16 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
   </div>
   <div class="modal-f"><button class="btn danger" id="secOff" onclick="removePass()">停用</button><button class="btn ghost" id="secLock" onclick="lockNow()">立即鎖定</button><div style="flex:1"></div>
     <button class="btn ghost" onclick="closeSec()">關閉</button><button class="btn primary" id="secSet" onclick="setPass()">啟用密碼保護</button></div>
+</div></div>
+
+<!-- 雲端同步 -->
+<div class="overlay" id="cloudModal"><div class="modal" style="max-width:500px">
+  <div class="modal-h"><h3>雲端同步</h3><button class="x" onclick="closeCloud()">×</button></div>
+  <div class="modal-b"><div id="cloudInfo" style="font-size:13.5px;line-height:1.9"></div>
+    <div class="note">資料在這台電腦先用<b>薪資密碼</b>加密才上傳，Firebase 上只有密文；登入的 Google 帳號須列在 Firestore 規則中。修改後約 2 秒自動上傳；其他電腦更新時會暫停上傳並提示，避免互相覆蓋。</div></div>
+  <div class="modal-f"><button class="btn danger" id="cloudOut" onclick="cloudSignOut()">登出</button><div style="flex:1"></div>
+    <button class="btn ghost sm" id="cloudPullBtn" onclick="cloudReload()">從雲端重新載入</button><button class="btn ghost sm" id="cloudPushBtn" onclick="cloudOverwrite()">以本機覆蓋雲端</button>
+    <button class="btn ghost sm" id="cloudSyncNow" onclick="cloudConnect(true)">立即同步</button><button class="btn primary" id="cloudIn" onclick="cloudSignIn()">以 Google 帳號登入</button></div>
 </div></div>
 
 <!-- 輸入密碼 -->
@@ -1541,17 +1556,18 @@ let saveChain=Promise.resolve();
 function save(){
   if(sec.key){const snap=JSON.stringify(state),k=sec.key,s=sec.salt;
     saveChain=saveChain.then(()=>encStr(snap,k,s)).then(p=>{try{localStorage.setItem(ENCKEY,JSON.stringify(p));localStorage.removeItem(KEY);}catch(e){}}).catch(()=>{});}
-  else{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}}
+  else{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  schedulePush();}
 function secReady(){return !!(window.crypto&&crypto.subtle);}
 
 function showLock(){$('lockOverlay').classList.add('on');$('lockPass').value='';$('lockMsg').textContent='';setTimeout(()=>$('lockPass').focus(),50);}
 async function unlock(){const p=$('lockPass').value,st=encStored();if(!p||!st)return;$('lockMsg').textContent='解鎖中…';
   try{const salt=ub64(st.salt),key=await deriveKey(p,salt);const txt=await decStr(st,key);
-    state=JSON.parse(txt);sec.key=key;sec.salt=salt;normalizeState();$('lockOverlay').classList.remove('on');bootUI();addLog('解鎖','');}
+    state=JSON.parse(txt);sec.key=key;sec.salt=salt;normalizeState();$('lockOverlay').classList.remove('on');bootUI();addLog('解鎖','');if(cloud.user)cloudConnect();}
   catch(e){$('lockMsg').textContent='密碼錯誤';}}
 function lockNow(){if(!sec.key){toast('尚未設定密碼');return;}saveChain.then(()=>location.reload());}
-function wipeAll(){if(!confirm('確定清除本機所有薪資資料？此動作無法復原（若有備份檔可之後匯入）。'))return;
-  if(!confirm('再次確認：清除後無法還原。'))return;try{localStorage.removeItem(ENCKEY);localStorage.removeItem(KEY);}catch(e){}location.reload();}
+function wipeAll(){if(!confirm('確定清除這台電腦的薪資資料？（雲端資料不受影響，之後可重新登入下載）'))return;
+  if(!confirm('再次確認：清除後無法還原。'))return;try{[ENCKEY,KEY,CLOUD_FLAG,CLOUD_META].forEach(k=>localStorage.removeItem(k));}catch(e){}location.reload();}
 let idleT;function resetIdle(){clearTimeout(idleT);if(sec.key)idleT=setTimeout(()=>{addLog('閒置自動鎖定','');lockNow();},IDLE_MIN*60000);}
 ['click','keydown','mousemove','touchstart'].forEach(t=>document.addEventListener(t,resetIdle,{passive:true}));
 
@@ -1567,11 +1583,11 @@ async function setPass(){if(!secReady()){$('secMsg').textContent='此瀏覽器�
   if(sec.key&&!(await verifyCur())){$('secMsg').textContent='目前密碼錯誤';return;}
   if(a.length<6){$('secMsg').textContent='密碼至少 6 個字元';return;}if(a!==b){$('secMsg').textContent='兩次輸入不一致';return;}
   const salt=crypto.getRandomValues(new Uint8Array(16));sec.key=await deriveKey(a,salt);sec.salt=salt;const first=!encStored();
-  addLog(first?'啟用密碼保護':'變更密碼','');save();await saveChain;
+  addLog(first?'啟用密碼保護':'變更密碼','');if(cloud.user){cloud.hashes={};}save();await saveChain;if(cloud.user)await cloudPush(true);
   let old=null;try{old=localStorage.getItem(OLDKEY);}catch(e){}
   if(first&&old&&confirm('偵測到舊版薪資系統（v2）的明文資料，是否一併刪除？\n（若舊版系統仍在使用，請按「取消」保留）')){try{localStorage.removeItem(OLDKEY);}catch(e){}addLog('刪除舊版明文資料','');}
   renderSec();resetIdle();toast(first?'已啟用密碼保護':'已變更密碼');}
-async function removePass(){if(!(await verifyCur())){$('secMsg').textContent='目前密碼錯誤';return;}
+async function removePass(){if(cloud.user){$('secMsg').textContent='雲端同步中無法停用密碼（雲端資料需加密），請先登出雲端';return;}if(!(await verifyCur())){$('secMsg').textContent='目前密碼錯誤';return;}
   if(!confirm('停用後資料將改為明文存放，確定？'))return;sec.key=null;sec.salt=null;try{localStorage.removeItem(ENCKEY);}catch(e){}addLog('停用密碼保護','');save();renderSec();toast('已停用密碼保護');}
 function askPass(title){return new Promise(res=>{$('askTitle').textContent=title;$('askPass').value='';$('askModal').classList.add('on');setTimeout(()=>$('askPass').focus(),50);
   $('askOk').onclick=()=>{$('askModal').classList.remove('on');res($('askPass').value);};$('askCancel').onclick=()=>{$('askModal').classList.remove('on');res(null);};});}
@@ -1679,6 +1695,108 @@ function fillAllPending(){const e=emp(det.id),m=mrec(e.id);
   todo.forEach(({d,g})=>{d.in=g.start;d.out=g.end;dayFromTimes(d);d.status='work';d.manual=true;});
   addLog('批次登錄出勤（依排班時間）',todo.length+' 天',curYM(),e.id);save();renderDet();}
 
+/* ===== 雲端同步（Firebase；資料先以薪資密碼加密，雲端只存密文）===== */
+const FB_CONFIG={apiKey:"AIzaSyDI1dj115cAAhNMYrRDzf8U4potKBmXjXg",authDomain:"bhcs-payroll.firebaseapp.com",projectId:"bhcs-payroll",
+  storageBucket:"bhcs-payroll.firebasestorage.app",messagingSenderId:"437577717604",appId:"1:437577717604:web:a9dd0eb779797dab460c71"};
+const FB_BASE=window.FB_BASE||'https://www.gstatic.com/firebasejs/10.12.2/';
+const CLOUD_FLAG='bhcs_payroll_cloud',CLOUD_META='bhcs_payroll_cloudmeta',COL='payroll';
+const cloud={app:null,au:null,auth:null,fs:null,db:null,user:null,rev:0,hashes:{},timer:null,busy:false,conflict:false,suppress:false,unsub:null,status:'',lastSync:'',ready:false};
+function cloudFlag(){try{return localStorage.getItem(CLOUD_FLAG)==='1';}catch(e){return false;}}
+function setCloudFlag(on){try{on?localStorage.setItem(CLOUD_FLAG,'1'):localStorage.removeItem(CLOUD_FLAG);}catch(e){}}
+function loadCloudMeta(){try{const m=JSON.parse(localStorage.getItem(CLOUD_META)||'{}');cloud.rev=m.rev||0;cloud.hashes=m.hashes||{};cloud.lastSync=m.lastSync||'';}catch(e){}}
+function saveCloudMeta(){try{localStorage.setItem(CLOUD_META,JSON.stringify({rev:cloud.rev,hashes:cloud.hashes,lastSync:cloud.lastSync}));}catch(e){}}
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36)+'.'+s.length;}
+// 拆分：core（員工、設定、紀錄）＋每月一份
+function cloudParts(){const p={core:JSON.stringify({version:state.version,settings:state.settings,employees:state.employees,log:state.log||[]})};
+  Object.keys(state.months).forEach(ym=>{p['m_'+ym]=JSON.stringify(state.months[ym]);});return p;}
+function partsToState(parts){const core=JSON.parse(parts.core||'{}');const s={version:3,settings:core.settings,employees:core.employees||[],log:core.log||[],months:{}};
+  Object.keys(parts).forEach(k=>{if(k.startsWith('m_'))s.months[k.slice(2)]=JSON.parse(parts[k]);});return s;}
+function localDirty(){const P=cloudParts();if(Object.keys(P).length!==Object.keys(cloud.hashes).length)return true;return Object.keys(P).some(k=>hashStr(P[k])!==cloud.hashes[k]);}
+
+async function fbLoad(){if(cloud.fs)return;
+  const [a,au,fs]=await Promise.all([import(FB_BASE+'firebase-app.js'),import(FB_BASE+'firebase-auth.js'),import(FB_BASE+'firebase-firestore.js')]);
+  cloud.app=a.initializeApp(FB_CONFIG);cloud.au=au;cloud.auth=au.getAuth(cloud.app);cloud.fs=fs;cloud.db=fs.getFirestore(cloud.app);}
+const dref=id=>cloud.fs.doc(cloud.db,COL,id);
+function setStatus(t,bad){cloud.status=t;const el=$('cloudBadge');if(el){el.textContent=t;el.className='cloud-badge'+(bad?' bad':'');}if($('cloudModal').classList.contains('on'))renderCloud();}
+function errText(e){const c=(e&&(e.code||e.message))||String(e);
+  if(/permission/i.test(c))return '此帳號沒有權限：請確認 Firestore 規則的 email 清單包含此帳號';
+  if(/popup-closed|cancelled-popup/i.test(c))return '已取消登入';if(/popup-blocked/i.test(c))return '登入視窗被瀏覽器擋住：請允許此網站的彈出式視窗後再試';if(/unauthorized-domain/i.test(c))return '網域未授權：請到 Authentication 設定把 yenyu-bot.github.io 加入授權網域';
+  if(/network|unavailable|offline/i.test(c))return '網路連線失敗，稍後自動重試';return c;}
+
+async function cloudInit(){if(!cloudFlag())return;loadCloudMeta();setStatus('雲端：連線中…');
+  try{await fbLoad();cloud.au.onAuthStateChanged(cloud.auth,u=>{cloud.user=u;cloud.ready=true;if(!u){setStatus('雲端：未登入',true);return;}
+      setStatus('雲端：已登入 '+u.email);if(sec.key)cloudConnect();else if(!encStored())setStatus('雲端：已登入，請在「雲端同步」下載資料');});}
+  catch(e){setStatus('雲端：載入失敗（'+errText(e)+'）',true);}}
+async function cloudSignIn(){try{setStatus('雲端：登入中…');await fbLoad();loadCloudMeta();
+    const r=await cloud.au.signInWithPopup(cloud.auth,new cloud.au.GoogleAuthProvider());cloud.user=r.user;setCloudFlag(true);addLog('雲端登入',r.user.email);
+    if(!cloud.unsubAuth)cloud.unsubAuth=cloud.au.onAuthStateChanged(cloud.auth,u=>{cloud.user=u;});await cloudConnect(true);}
+  catch(e){setStatus('雲端：'+errText(e),true);toast(errText(e));}}
+async function cloudSignOut(){if(!confirm('登出雲端？本機資料保留，之後不再自動同步。'))return;
+  try{if(cloud.unsub)cloud.unsub();cloud.unsub=null;if(cloud.auth)await cloud.au.signOut(cloud.auth);}catch(e){}
+  cloud.user=null;setCloudFlag(false);addLog('雲端登出','');save();setStatus('雲端：未啟用');renderCloud();}
+
+// 連線後決定上傳、下載或處理衝突
+async function cloudConnect(interactive){if(!cloud.user)return;setStatus('雲端：同步中…');
+  let snap;try{snap=await cloud.fs.getDoc(dref('meta'));}catch(e){setStatus('雲端：'+errText(e),true);if(interactive)toast(errText(e));return;}
+  const meta=snap.exists()?snap.data():null;
+  if(!meta){ // 雲端尚無資料 → 首次上傳
+    if(!sec.key){setStatus('雲端：請先設定薪資密碼',true);toast('雲端同步需要先啟用密碼保護（資料加密後才上傳）');openSec();return;}
+    if(interactive&&!confirm('雲端目前沒有資料，要把這台電腦的資料上傳嗎？'))return;
+    cloud.rev=0;cloud.hashes={};await cloudPush(true);cloudWatch();return;}
+  const sameKey=sec.key&&sec.salt&&b64(sec.salt)===meta.salt;
+  if(!sameKey){ // 新電腦或密碼不同
+    const hasLocal=state.employees.length>0;
+    if(hasLocal&&!confirm('雲端已有資料（最後更新：'+(meta.updatedBy||'')+'）。要用雲端資料取代這台電腦的資料嗎？\n按「取消」則不同步。')){setStatus('雲端：未同步（本機與雲端資料不同）',true);return;}
+    const ok=await cloudPullWithPass(meta);if(ok)cloudWatch();return;}
+  if(meta.rev>cloud.rev){
+    if(localDirty()&&cloud.rev>0&&!confirm('雲端有其他電腦更新的版本，這台電腦也有尚未上傳的修改。\n按「確定」使用雲端版本（本機未上傳的修改會被取代）；\n按「取消」保留本機版本並覆蓋雲端。')){cloud.rev=meta.rev;await cloudPush(true);}
+    else await cloudPull(meta,sec.key);}
+  else if(localDirty())await cloudPush(true);
+  else{cloud.lastSync=new Date().toISOString();saveCloudMeta();setStatus('雲端：已同步');}
+  cloudWatch();}
+async function cloudPullWithPass(meta){for(let i=0;i<3;i++){const p=await askPass(i?'密碼錯誤，請重新輸入雲端資料的薪資密碼':'輸入雲端資料的薪資密碼');if(p==null){setStatus('雲端：未同步',true);return false;}
+    const salt=ub64(meta.salt),key=await deriveKey(p,salt);try{await cloudPull(meta,key,true);sec.key=key;sec.salt=salt;save();bootUI();return true;}catch(e){if(!/decrypt|operation/i.test(String(e&&e.name||e)))break;}}
+  setStatus('雲端：密碼錯誤',true);return false;}
+async function cloudPull(meta,key,strict){const parts={};
+  const docs=await Promise.all((meta.parts||[]).map(id=>cloud.fs.getDoc(dref(id))));
+  for(let i=0;i<docs.length;i++){const d=docs[i];if(!d.exists())continue;const v=d.data();
+    try{parts[meta.parts[i]]=await decStr(v,key);}catch(e){if(strict)throw e;setStatus('雲端：解密失敗（密碼可能已在其他電腦變更）',true);return cloudPullWithPass(meta);}}
+  cloud.suppress=true;state=partsToState(parts);normalizeState();save();cloud.suppress=false;
+  cloud.rev=meta.rev;cloud.hashes={};const P=cloudParts();Object.keys(P).forEach(k=>cloud.hashes[k]=hashStr(P[k]));
+  cloud.lastSync=new Date().toISOString();saveCloudMeta();cloud.conflict=false;hideBanner();renderActive();setStatus('雲端：已下載最新版本（'+(meta.updatedBy||'')+'）');}
+async function cloudPush(force){if(!cloud.user||!sec.key||cloud.conflict)return;if(cloud.busy){cloud.again=true;return;}
+  cloud.busy=true;setStatus('雲端：上傳中…');
+  try{const P=cloudParts(),changed=Object.keys(P).filter(k=>force&&!cloud.hashes[k]||hashStr(P[k])!==cloud.hashes[k]);
+    const removed=Object.keys(cloud.hashes).filter(k=>!(k in P));
+    const enc={};for(const k of changed)enc[k]=await encStr(P[k],sec.key,sec.salt);
+    const base=cloud.rev,email=cloud.user.email,saltB=b64(sec.salt);
+    await cloud.fs.runTransaction(cloud.db,async tx=>{const m=await tx.get(dref('meta'));const cur=m.exists()?(m.data().rev||0):0;
+      if(cur!==base)throw Object.assign(new Error('conflict'),{code:'conflict'});
+      changed.forEach(k=>tx.set(dref(k),{ct:enc[k].ct,iv:enc[k].iv}));removed.forEach(k=>tx.delete(dref(k)));
+      tx.set(dref('meta'),{rev:base+1,salt:saltB,parts:Object.keys(P),updatedBy:email,updatedAt:cloud.fs.serverTimestamp(),client:navigator.userAgent.slice(0,80)});});
+    cloud.rev=base+1;changed.forEach(k=>cloud.hashes[k]=hashStr(P[k]));removed.forEach(k=>delete cloud.hashes[k]);
+    cloud.lastSync=new Date().toISOString();saveCloudMeta();setStatus('雲端：已同步');}
+  catch(e){if(e.code==='conflict'){cloud.conflict=true;showBanner();setStatus('雲端：其他電腦已更新，暫停上傳',true);}
+    else{setStatus('雲端：'+errText(e),true);clearTimeout(cloud.timer);cloud.timer=setTimeout(()=>cloudPush(),30000);}}
+  finally{cloud.busy=false;if(cloud.again){cloud.again=false;schedulePush();}}}
+function schedulePush(){if(!cloud.user||!sec.key||cloud.suppress||cloud.conflict)return;clearTimeout(cloud.timer);cloud.timer=setTimeout(()=>cloudPush(),2000);}
+function cloudWatch(){if(cloud.unsub||!cloud.user)return;
+  cloud.unsub=cloud.fs.onSnapshot(dref('meta'),s=>{if(!s.exists())return;const m=s.data();if((m.rev||0)>cloud.rev&&!cloud.busy){cloud.conflict=true;showBanner(m.updatedBy);setStatus('雲端：其他電腦已更新',true);}},()=>{});}
+function showBanner(by){$('cloudBanner').style.display='flex';$('cloudBannerTxt').textContent='其他電腦'+(by?'（'+by+'）':'')+'已更新雲端資料。為避免互相覆蓋，本機已暫停上傳。';}
+function hideBanner(){$('cloudBanner').style.display='none';}
+async function cloudReload(){try{const s=await cloud.fs.getDoc(dref('meta'));if(!s.exists())return;
+    if(localDirty()&&!confirm('載入雲端版本後，這台電腦尚未上傳的修改會被取代，確定？'))return;await cloudPull(s.data(),sec.key);}
+  catch(e){toast(errText(e));}}
+async function cloudOverwrite(){if(!confirm('用這台電腦的資料覆蓋雲端？其他電腦的最新修改會被取代。'))return;
+  try{const s=await cloud.fs.getDoc(dref('meta'));cloud.rev=s.exists()?(s.data().rev||0):0;cloud.conflict=false;hideBanner();await cloudPush(true);addLog('以本機資料覆蓋雲端','');save();}catch(e){toast(errText(e));}}
+function openCloud(){renderCloud();$('cloudModal').classList.add('on');}
+function closeCloud(){$('cloudModal').classList.remove('on');}
+function renderCloud(){const on=!!cloud.user;
+  $('cloudInfo').innerHTML=on?`<span class="pill ok">已登入</span> ${esc(cloud.user.email)}<br>狀態：${esc(cloud.status)}<br>雲端版本：${cloud.rev}　最後同步：${esc((cloud.lastSync||'—').slice(0,16).replace('T',' '))}`
+    :`<span class="pill warn">未啟用</span>　登入後，資料會加密上傳到薪資專用的 Firebase（bhcs-payroll），任何電腦登入同一個 Google 帳號並輸入薪資密碼即可使用。`;
+  $('cloudIn').style.display=on?'none':'';$('cloudOut').style.display=on?'':'none';$('cloudSyncNow').style.display=on?'':'none';
+  $('cloudPullBtn').style.display=on?'':'none';$('cloudPushBtn').style.display=on?'':'none';}
+
 function pTag(){return curYM();}
 function val(arr,l){const f=arr.find(x=>x[0]===l);return f?f[1]:0;}
 function exportExcel(){
@@ -1738,6 +1856,7 @@ $('payDate').addEventListener('change',()=>{if(activeView()==='slip')renderSlips
 $('lockPass').addEventListener('keydown',ev=>{if(ev.key==='Enter')unlock();});
 $('logFilter').addEventListener('input',renderHistory);$('histYear').addEventListener('change',renderHistory);
 if(load()==='locked')showLock();else{bootUI();if(migrated)setTimeout(()=>toast('已從舊版資料轉換：請到員工設定確認特休制度與「啟用前本期已休」天數'),300);}
+cloudInit();
 </script>
 </body>
 </html>

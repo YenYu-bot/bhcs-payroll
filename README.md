@@ -18,6 +18,8 @@
 - Excel 總表、Word 薪資單、年度薪資紀錄、列印
 
 ## 資料
+雲端同步（選用）：以 Google 帳號登入薪資專用 Firebase 專案 `bhcs-payroll`，資料在瀏覽器以薪資密碼加密後才上傳，Firestore 只存密文；存取權限由 Firestore 規則限定帳號。多台電腦同時修改時會暫停上傳並提示，避免互相覆蓋。
+
 所有資料只存在使用者瀏覽器的 localStorage（按月份分開），不會上傳。建議啟用密碼保護：GitHub Pages 同一網域（yenyu-bot.github.io）下的其他網頁可讀取同一份 localStorage，加密後才無法讀取。請定期用「匯出備份 (JSON)」備份；忘記密碼無法復原。
 
 本工具僅供試算，實際仍以法令、主管機關函釋與專業意見為準。
