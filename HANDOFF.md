@@ -67,7 +67,7 @@ Repo 只有三個檔案：`index.html`（系統本體）、`README.md`、`HANDOF
 ```js
 state = {
   version: 3,
-  settings: { prorateBase:'cal'|'30', calRound, holidays:'YYYY-MM-DD 名稱\n…',
+  settings: { absUnit:0|30|60, leaveDefault:'cal', prorateBase:'cal'|'30', calRound, holidays:'YYYY-MM-DD 名稱\n…',
               seasons:{summerStart,summerEnd,winterStart,winterEnd} },
   employees: [{ id, name, role, empNo, payType:'monthly'|'hourly', base, rate, ptRatio,
     hourBasis:'punch'|'sched', hourRound, brkMin, brkAfter, summer, perfect, otFixed,
@@ -82,6 +82,7 @@ state = {
     att:{sick,menstrual,personal,family,paidLeave,extraHours},   // 單位：小時（手動額外輸入）
     days:[{date,wk,in,out,wh(分),punches,abnormal,kind,status,hours,manual}],  // 應出勤日曆
     otEvents:[{date,type,hours}], annualEvents:[{date,hours}], lateEvents:[{date,late,early}],
+    absChoice:{[date]:{type,hours,min}},   // 單日缺勤逾 60 分的處理（事假/病假/特休…/late＝維持遲到早退）
     items:[{name,type,amount,note}], otherBonus, otherDeduct, overrides:{[項目名]:金額},
     reviews:{[key]:{d:'ok'|'no', v:簽章, t}}, confirmed, confirmedAt, snapshot } } },
   log: [{t, action, detail, ym, emp}]
@@ -98,6 +99,8 @@ state = {
 - **工資基礎**：底薪＋勾選的全勤、暑期津貼、固定加項（「計入工資」）；時薪＝÷240、日薪＝÷30。計時人員以時薪為基礎。
 - **加班 §24／§32／§36／§39／§40**：逐日計算；平日延長 4/3、5/3；休息日 4/3、5/3、8/3；國定假日 8 小時內加發一日工資（計時人員為加發時薪×時數）；例假日出勤加倍並警示；延長工時超過 46 小時警示；定額加班費＝max(定額, 法定)。
 - **請假（勞工請假規則 §4、§9；性平法 §14、§21）**：病假年度 30 日內半薪、超過不給薪；生理假每年 3 日不併入病假；全勤不得因婚喪公假、家庭照顧假、生理假而扣；病假只能按比例扣全勤（全勤×病假日數÷30）。
+- **特休 12 月結算**：使用者的做法是每年 12 月薪資結算特休，所以新員工預設**曆年制**（施行細則 §24 II ②）；曆年制未休工資在 12 月薪資自動產生（審核 `annualPay`）。週年制年度終結在到職週年日，須 30 日內發給（§24-1），特休總覽會提示並提供「全部改為曆年制」。
+- **單日缺勤逾 1 小時**（`core7` 區段：`absenceItems`、`openAbs`、`setAbs`）：單日遲到加早退超過 60 分、或整天未打卡（且該日是工作日），匯入後自動跳出「缺勤處理」，逐筆選擇假別；時數依 `settings.absUnit` 進位。選定後該日的遲到早退由 `lateRaw` 排除，改由 `dayAgg` 計入假別時數。未處理的筆數納入 `attend` 審核簽章。
 - **遲到早退**：每月寬限；扣薪依實際分鐘數；計時人員依打卡實際工時計薪時不另扣；以特休抵扣依 §38 須員工申請，列入審核。
 - **破月**：底薪、津貼、固定加項依在職日數比例；勞保、勞退依投保日數（每月以 30 日計）；健保看月底在保。
 - **打卡機檔案格式**（真實檔已驗證）：欄位為「系統編號、員工編號、中文姓名、英文姓名、上班天數、異常天數、上班時數、序號、日期、星期、打卡時間、備註」。每位員工第一列有姓名；每天有一列只有日期，下一列起才是打卡時間；備註 `WH=08H05` 是當日工時，`*WH=` 表示異常。**列出的日期＝排班日**（含未打卡日），未打卡＝列出天數－上班天數。
@@ -147,4 +150,5 @@ match /{document=**} { allow read, write: if false; }
 3. 人工審核、薪資紀錄、異動紀錄、密碼加密
 4. 每週七天彈性排班、計時工時輸入、特休抵扣遲到、自訂薪資項目（並修正計時員工表單未切換的 bug）
 5. 雲端同步（Firebase，端對端加密）
+7. 特休 12 月結算（預設曆年制）、單日缺勤逾 1 小時跳出假別選擇、休息日／例假日未打卡不列為缺勤
 6. 快速排班：排班表最上方「快速」列，勾選的日子套用（`applyTpl()`），未勾選手動輸入
