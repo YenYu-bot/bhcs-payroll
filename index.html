@@ -161,6 +161,11 @@ table.data input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 
 .slip-foot .lbl{font-size:14px;font-weight:700;letter-spacing:2px}
 .slip-foot .net{font-family:var(--mono);font-size:26px;font-weight:800;color:var(--pos)}
 .slip-foot .net::before{content:"NT$ ";font-size:14px;color:var(--muted);font-weight:600}
+.slip-att{display:grid;grid-template-columns:1.1fr 2fr 1fr 1fr 1fr 1fr;border-top:1px solid var(--line);background:var(--accent-wash)}
+.slip-att>div{padding:9px 12px;border-right:1px solid var(--line)}.slip-att>div:last-child{border-right:none}
+.slip-att .k{font-size:11px;color:var(--muted);margin-bottom:3px}.slip-att .v{font-size:13px;font-weight:600;color:var(--ink);line-height:1.45}
+.slip-att small{font-size:10.5px;font-weight:400;color:var(--muted)}
+@media (max-width:760px){.slip-att{grid-template-columns:1fr 1fr}.slip-att .wide{grid-column:1/-1}}
 .slip-meta{padding:9px 22px;background:var(--paper);border-top:1px solid var(--line);display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .slip-meta b{color:var(--ink-soft);font-family:var(--mono)}
 .slip-late{padding:8px 22px;background:#fffdf6;border-top:1px dashed var(--line);font-size:11.5px;color:var(--ink-soft)}
@@ -1044,7 +1049,7 @@ function computeLive(e,ym,r){
   const gross=earnings.reduce((s,x)=>s+x[1],0),totalDed=deducts.reduce((s,x)=>s+x[1],0);
   let annualLeft=LS.cur?D2(LS.cur.remaining):0;
   if(ov['特休剩餘']!=null&&ov['特休剩餘']!==''){annualLeft=+ov['特休剩餘'];ovList.push('特休剩餘');}
-  const absence={pendingH:D2(A.pendingH),absentH:D2(A.absentH),lateMin:L.totalMin,missing:A.missing,total:D2(A.pendingH+A.absentH+L.totalMin/60)};
+  const absence={absentDays:A.absent,pendingDays:A.pending,offsetH:D2(L.offsetDays*HPD),pendingH:D2(A.pendingH),absentH:D2(A.absentH),lateMin:L.totalMin,missing:A.missing,total:D2(A.pendingH+A.absentH+L.totalMin/60)};
   return {customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
     hr,dw,wage:wageBase(e),ot:{weekday:ot.weekday,rest:ot.rest,holiday:ot.holiday,offday:ot.offday,pay:ot.pay,count:ot.count,hours:ot.hours,ext:ot.ext},
     typhoon:{days:A.typhoon,h:D2(A.typhoonH),workH:D2(A.typhoonWorkH)},attend:{sched:A.sched,worked:A.worked,workH:D2(A.workH),regH:D2(A.regH+(+r.att.extraHours||0)),holidayWork:A.holidayWork,hasDays:(r.days||[]).length>0},absence,
@@ -1448,8 +1453,19 @@ function lateText(c){if(!c.late.count)return '';const L=c.late;const days=L.deta
   const consq=L.over?'　→　逾寬限'+(L.offsetDays>0?`，特休抵扣 ${D2(L.offsetDays*HPD)} 小時`:'')+(L.voids?'，全勤取消':'')+(L.deduct?`，扣薪 -${N(L.deduct)}`:''):`（本月累計 ${L.totalMin} 分，未逾 ${L.grace} 分寬限）`;
   return '遲到/早退：'+days+consq;}
 function leaveText(c){const l=c.leave,p=[];if(c.typhoon&&c.typhoon.days)p.push('颱風假 '+c.typhoon.days+' 天');if(c.typhoon&&c.typhoon.workH)p.push('天災停班日出勤 '+c.typhoon.workH+'h');
-  if(l.sick)p.push('病假 '+l.sick+' 日');if(l.men)p.push('生理假 '+l.men+' 日');if(l.personal)p.push('事假 '+l.personal+' 日');if(l.family)p.push('家庭照顧假 '+l.family+' 日');if(l.paid)p.push('婚喪公假 '+l.paid+' 日');if(l.annualH)p.push('特休 '+D2(l.annualH)+' 時');
+  if(l.paid)p.push('婚喪公假 '+l.paid+' 日');
   if(l.sickFullDays)p.push('病假逾年度 30 日 '+l.sickFullDays+' 日不給薪');return p.join(' / ');}
+/* 薪資單「出勤摘要」：缺勤狀況、事假、病假、特休（本月）、特休剩餘 */
+function fmtH(h){h=D2(h||0);return h?`${D2(h/HPD)} 天（${h} 時）`:'0 天';}
+function attSum(c){const a=c.absence||{},l=c.leave||{},t=c.attend||{},L=c.late||{};
+  const abs=[];if(a.absentDays)abs.push(`曠職 ${a.absentDays} 天`);if(a.pendingDays)abs.push(`未打卡待確認 ${a.pendingDays} 天`);if(a.missing)abs.push(`漏打卡 ${a.missing} 天`);
+  if(L.totalMin)abs.push(`遲到早退 ${L.totalMin} 分`+(a.offsetH?`（特休抵扣 ${a.offsetH} 時）`:''));
+  const annualH=D2((l.annualH||0)+(+a.offsetH||0)),annualUsed=D2(annualH/HPD);
+  return {att:t.hasDays?`應出勤 ${t.sched} 天／實際 ${t.worked} 天`:'—',abs:abs.join('、')||'無',
+    personal:fmtH(((l.personal||0)+(l.family||0))*HPD)+(l.family?`<br><small>含家庭照顧 ${D2(l.family)} 天</small>`:''),
+    sick:fmtH((l.sick||0)*HPD)+(l.men?`<br><small>另生理假 ${D2(l.men)} 天</small>`:''),annual:fmtH(annualH),annualUsed,left:c.annualLeft};}
+function attPlain(c){const s=attSum(c);const strip=x=>String(x).replace(/<br><small>/g,'，').replace(/<\/small>/g,'');
+  return [['出勤',s.att],['缺勤狀況',s.abs],['事假',strip(s.personal)],['病假',strip(s.sick)],['特休（本月）',s.annual],['特休剩餘',s.left+' 天']];}
 function absText(c){if(!c.absence)return '';const a=c.absence,t=c.attend||{};const p=[];if(a.pendingH)p.push('待確認 '+a.pendingH+'h');if(a.absentH)p.push('曠職 '+a.absentH+'h');if(a.lateMin)p.push('遲到早退 '+a.lateMin+' 分');
   return (t.hasDays?`<span>應出勤 <b>${t.sched}</b> 天 / 出勤 <b>${t.worked}</b> 天${c.payType==='hourly'?` / 計薪工時 <b>${t.regH}</b> h`:''}</span>`:'')
     +`<span>缺勤時數 <b style="color:${a.total?'var(--neg)':'inherit'}">${a.total} 小時</b>${p.length?'（'+p.join('、')+'）':''}${a.missing?` <span style="color:var(--neg)">漏打卡 ${a.missing} 天未補</span>`:''}</span>`;}
@@ -1480,11 +1496,16 @@ function renderSlips(){
         <div class="col earn"><h4>應發項目</h4>${earn}<div class="li sum"><span class="lb">應發合計</span><span class="v">${N(c.gross)}</span></div></div>
         <div class="col ded"><h4>應扣項目</h4>${ded}<div class="li sum"><span class="lb" style="color:var(--ink)">應扣合計</span><span class="v">-${N(c.totalDed)}</span></div></div></div>
       <div class="slip-foot"><span class="lbl">實發金額</span><span class="net">${N(c.net)}</span></div>
+      ${(()=>{const s=attSum(c);return `<div class="slip-att">
+        <div><div class="k">出勤</div><div class="v">${s.att}</div></div>
+        <div class="wide"><div class="k">缺勤狀況</div><div class="v">${s.abs}</div></div>
+        <div><div class="k">事假</div><div class="v">${s.personal}</div></div>
+        <div><div class="k">病假</div><div class="v">${s.sick}</div></div>
+        <div><div class="k">特休（本月）</div><div class="v">${s.annual}</div></div>
+        <div><div class="k">特休剩餘</div><div class="v"><input class="slip-in mini${c.overridden.includes('特休剩餘')?' ovon':''}" type="text" inputmode="decimal" value="${c.annualLeft}" data-eid="${e.id}" data-lb="特休剩餘"${dis} onchange="slipEdit(this)"> 天</div></div></div>`;})()}
       <div class="slip-meta">
-        <span>特休剩餘 <input class="slip-in mini${c.overridden.includes('特休剩餘')?' ovon':''}" type="text" inputmode="decimal" value="${c.annualLeft}" data-eid="${e.id}" data-lb="特休剩餘"${dis} onchange="slipEdit(this)"> 天</span>
         ${otText(c)?`<span>加班 <b>${otText(c)}</b></span>`:''}
         ${leaveText(c)?`<span>${leaveText(c)}</span>`:''}
-        ${absText(c)}
         <span>時薪 <b>${N(c.hr)}</b>${c.payType==='hourly'?'':` / 日薪 <b>${N(c.dw)}</b>`}</span>
         ${c.pensionEr?`<span>雇主提繳勞退 <b>${N(c.pensionEr)}</b></span>`:''}
         ${c.pr.partial&&c.pr.employed?`<span style="color:var(--gold)">破月：在職 <b>${c.pr.inDays}</b> / ${c.pr.monthDays} 日（底薪比例 ${c.pr.factor.toFixed(3)}，勞保投保 ${c.pr.insDays} 日${c.pr.healthFull?'':'，健保當月不收'}）</span>`:''}
@@ -1891,11 +1912,11 @@ function exportExcel(){
   if(!state.employees.length){toast('尚無員工資料');return;}
   const {wm,pd:pday}=payLabel();
   const CS=state.employees.map(e=>compute(e)),cE=[...new Set(CS.flatMap(c=>c.customE||[]))],cD=[...new Set(CS.flatMap(c=>c.customD||[]))];
-  const head=['姓名','職稱','計薪',...EARN,...cE,'應發合計',...DED,...cD,'應扣合計','實發金額','雇主勞退提繳','特休剩餘(天)','應出勤(天)','出勤(天)','計時工時','加班時數','缺勤時數','遲到早退(分)','確認'];
+  const head=['姓名','職稱','計薪',...EARN,...cE,'應發合計',...DED,...cD,'應扣合計','實發金額','雇主勞退提繳','特休剩餘(天)','應出勤(天)','出勤(天)','計時工時','加班時數','缺勤時數','遲到早退(分)','事假(天)','病假(天)','特休本月(天)','確認'];
   const rows=[[wm+'薪資'+(pday?'　發薪日 '+pday:'')],head];const tot=new Array(head.length).fill(0);
   state.employees.forEach((e,ix)=>{const c=CS[ix];
     const at=c.attend||{},ab=c.absence||{};
-    const r=[e.name,e.role||'',c.payType==='hourly'?'計時':'月薪',...EARN.map(l=>val(c.earnings,l)),...cE.map(l=>val(c.earnings,l)),c.gross,...DED.map(l=>val(c.deducts,l)),...cD.map(l=>val(c.deducts,l)),c.totalDed,c.net,c.pensionEr||0,c.annualLeft,at.sched||0,at.worked||0,c.payType==='hourly'?(at.regH||0):'',D2(c.ot.hours),ab.total||0,c.late.totalMin,c.confirmed?'✓已確認':'未確認'];
+    const r=[e.name,e.role||'',c.payType==='hourly'?'計時':'月薪',...EARN.map(l=>val(c.earnings,l)),...cE.map(l=>val(c.earnings,l)),c.gross,...DED.map(l=>val(c.deducts,l)),...cD.map(l=>val(c.deducts,l)),c.totalDed,c.net,c.pensionEr||0,c.annualLeft,at.sched||0,at.worked||0,c.payType==='hourly'?(at.regH||0):'',D2(c.ot.hours),ab.total||0,c.late.totalMin,D2((c.leave.personal||0)+(c.leave.family||0)),D2(c.leave.sick||0),attSum(c).annualUsed,c.confirmed?'✓已確認':'未確認'];
     rows.push(r);r.forEach((v,i)=>{if(i>=3&&typeof v==='number')tot[i]+=v;});});
   const sumUpto=head.indexOf('雇主勞退提繳');rows.push(head.map((h,i)=>i===0?'總計':(i>=3&&i<=sumUpto)?Math.round(tot[i]):''));
   dl(new Blob([buildXlsx('薪資總表',rows)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'百宏薪資總表_'+pTag()+'.xlsx');
@@ -1908,7 +1929,7 @@ function exportWord(){
     const c=compute(e),er=visibleRows(c,c.earnings),de=visibleRows(c,c.deducts),n=Math.max(er.length,de.length);let body='';
     for(let i=0;i<n;i++){const eL=er[i]?er[i][0]:'',eV=er[i]?N(er[i][1]):'',dL=de[i]?de[i][0]:'',dV=de[i]?(de[i][1]?'-'+N(de[i][1]):'0'):'';
       body+=`<tr><td>${eL}</td><td class="r">${eV}</td><td class="dl">${dL}</td><td class="r red">${dV}</td></tr>`;}
-    const meta=['特休剩餘 '+c.annualLeft+' 天',absPlain(c),otText(c)&&'加班 '+otText(c),leaveText(c),'時薪 '+N(c.hr)+(c.payType==='hourly'?'':' / 日薪 '+N(c.dw)),c.pensionEr&&'雇主提繳勞退 '+N(c.pensionEr)].filter(Boolean).join('　·　');
+    const meta=[otText(c)&&'加班 '+otText(c),leaveText(c),'時薪 '+N(c.hr)+(c.payType==='hourly'?'':' / 日薪 '+N(c.dw)),c.pensionEr&&'雇主提繳勞退 '+N(c.pensionEr)].filter(Boolean).join('　·　');
     const notes=[lateText(c),c.perfectNote&&'全勤：'+c.perfectNote,c.otNote&&'加班費：'+c.otNote,...c.payNotes.map(x=>'特休未休工資：'+x),...(c.warns||[]).map(w=>'⚠ '+w)].filter(Boolean);
     return `<div class="slip"${idx<state.employees.length-1?' style="page-break-after:always"':''}>
       <table class="hdr"><tr><td><div class="co">百宏文教機構</div><div class="tt">薪　資　明　細　表</div></td>
@@ -1916,6 +1937,7 @@ function exportWord(){
       <table class="grid"><tr class="th"><td>應發項目</td><td class="r">金額</td><td class="dl">應扣項目</td><td class="r">金額</td></tr>${body}
         <tr class="sum"><td>應發合計</td><td class="r">${N(c.gross)}</td><td class="dl">應扣合計</td><td class="r red">-${N(c.totalDed)}</td></tr>
         <tr class="net"><td colspan="2" class="netlbl">實　發　金　額</td><td colspan="2" class="r netval">NT$ ${N(c.net)}</td></tr>
+        <tr class="att"><td colspan="4">${attPlain(c).map(([k,v])=>`<b>${k}</b>：${esc(v)}`).join('　｜　')}</td></tr>
         <tr><td colspan="4" class="meta">${esc(meta)}</td></tr>
         ${notes.map(x=>`<tr><td colspan="4" class="meta">${esc(x)}</td></tr>`).join('')}</table></div>`;}).join('');
   const html='﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8">'
@@ -1926,7 +1948,7 @@ function exportWord(){
     +'.grid td{border:0.5pt solid #b9c4c9;padding:5px 10px} .grid .th td{background:#e3f0f2;font-weight:bold;color:#0a505c}'
     +'.r{text-align:right} .red{color:#c0392b} .dl{border-left:1.5pt solid #16232e!important}'
     +'.sum td{background:#f2f5f6;font-weight:bold} .net .netlbl{background:#16232e;color:#fff;font-weight:bold;letter-spacing:3px} .net .netval{background:#f2f5f6;font-size:16pt;font-weight:bold;color:#157347}'
-    +'.meta{font-size:8.5pt;color:#666;background:#fafbfb}</style></head><body>'+slips+'</body></html>';
+    +'.meta{font-size:8.5pt;color:#666;background:#fafbfb} .att td{font-size:9.5pt;background:#f2f8f9;line-height:1.7}</style></head><body>'+slips+'</body></html>';
   dl(new Blob([html],{type:'application/msword'}),'百宏薪資單_'+pTag()+'.doc');toast('已匯出 Word 薪資單');}
 
 /* boot */
