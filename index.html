@@ -362,7 +362,8 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
 
   <details class="rules" style="margin-top:16px">
     <summary>國定假日清單（判定國定假日出勤、未打卡日自動標為假日）</summary>
-    <div class="rc">每行一天，格式 <code>YYYY-MM-DD 名稱</code>。預設為人事總處 2026 年行事曆（含補假日）；若與員工協商調移假日，請修改此清單或於出勤日曆逐日調整。
+    <div class="rc">每行一天，格式 <code>YYYY-MM-DD 名稱</code>。預設為人事總處 2026 年行事曆（含補假日）。<br>
+      <b>休息日調移</b>：名稱寫「休息日調移」（例：<code>2026-10-09 休息日調移</code>），該日對所有員工改為休息日（出勤依 §24 計休息日加班費），<b>同一週原本的休息日改為工作日</b>；若原休息日剛好是國定假日，即於當天放假、工資照給，不再另行補假。調移須事先與員工約定（勞動契約或書面同意）。個別員工例外可於出勤日曆逐日調整。
       <textarea id="holidayList" rows="10" style="width:100%;margin-top:8px;font-family:var(--mono);font-size:12.5px;padding:8px;border:1px solid var(--line-strong);border-radius:8px"></textarea></div>
   </details>
   <details class="rules" style="margin-top:12px">
@@ -711,7 +712,7 @@ const HOLIDAYS_2026=`2026-01-01 元旦
 2026-06-19 端午節
 2026-09-25 中秋節
 2026-09-28 教師節
-2026-10-09 國慶日補假
+2026-10-09 休息日調移（國慶日當週：10/9 為休息日，10/10 改為工作日並放國定假日；依勞動契約）
 2026-10-10 國慶日
 2026-10-25 光復節
 2026-10-26 光復節補假
@@ -757,7 +758,9 @@ function migrateV2(old,ym){
   if(Object.keys(M).length)s.months[ym]=M;
   return s;}
 
-function normalizeState(){if(state.settings&&!state.settings.typhoonPayV2){state.settings.typhoonPayV2=1;if(state.settings.typhoonPay!=='unpaid'){state.settings.typhoonPay='unpaid';
+function normalizeState(){if(state.settings&&!state.settings.swapV1){state.settings.swapV1=1;const h=state.settings.holidays||'';
+    if(/2026-10-09 國慶日補假/.test(h)){state.settings.holidays=h.replace(/2026-10-09 國慶日補假[^\n]*/,'2026-10-09 休息日調移（國慶日當週：10/9 為休息日，10/10 改為工作日並放國定假日；依勞動契約）');
+      (state.log=state.log||[]).push({t:new Date().toISOString(),action:'修改國定假日清單',detail:'2026-10-09 國慶日補假 → 休息日調移（依勞動契約）',ym:'',emp:''});}}if(state.settings&&!state.settings.typhoonPayV2){state.settings.typhoonPayV2=1;if(state.settings.typhoonPay!=='unpaid'){state.settings.typhoonPay='unpaid';
     (state.log=state.log||[]).push({t:new Date().toISOString(),action:'修改颱風假工資',detail:'照給 → 不給薪（依勞資約定；勞動部為「宜不扣發」之建議）',ym:'',emp:''});}}if(state.employees&&!(state.settings||{}).latePolicyV3){state.settings=state.settings||{};state.settings.latePolicyV3=1;state.settings.latePolicyV2=1;
     (state.employees||[]).forEach(e=>{const o=e.lateePolicy||'voidPerfect';if(o==='annualOffset'&&e.lateFallback)return;
       e.lateePolicy='annualOffset';e.lateFallback='both';if(e.lateUnit==null||e.lateUnit==='')e.lateUnit=String((state.settings.absUnit??30));
@@ -795,7 +798,11 @@ function fixedWageAdd(e){return (e.fixedItems||[]).filter(x=>x.type==='add'&&x.w
 function wageBase(e){if(isHourly(e))return (+e.rate||0)*240;return (+e.base||0)+(e.wagePerfect!==false?(+e.perfect||0):0)+(e.wageSummer!==false?(+e.summer||0):0)+fixedWageAdd(e);}
 function hourly(e){return isHourly(e)?(+e.rate||0):wageBase(e)/240;}
 function daily(e){return isHourly(e)?(+e.rate||0)*HPD:wageBase(e)/30;}
-function holidaySet(){const s=new Set();String(state.settings.holidays||'').split(/\n/).forEach(l=>{const t=pd(l);if(t!=null)s.add(fd(t));});return s;}
+// 假日清單：一般行為「國定假日」；含「休息日調移」者為當日改為休息日（同週原休息日改為工作日）
+const SWAP_RE=/休息日調移|調移休息日/;
+function swapSet(){const s=new Set();String(state.settings.holidays||'').split(/\n/).forEach(l=>{const t=pd(l);if(t!=null&&SWAP_RE.test(l))s.add(fd(t));});return s;}
+function holidaySet(){const s=new Set(),sw=swapSet();String(state.settings.holidays||'').split(/\n/).forEach(l=>{const t=pd(l);if(t!=null&&!SWAP_RE.test(l)&&!sw.has(fd(t)))s.add(fd(t));});return s;}
+function weekKey(date){const t=pd(date);if(t==null)return '';const dow=(new Date(t).getUTCDay()+6)%7;return fd(t-dow*DAY);}  // 週一為一週起點
 function typhoonSet(){const s=new Set();String(state.settings.typhoonDates||'').split(/\n/).forEach(l=>{const t=pd(l);if(t!=null)s.add(fd(t));});return s;}
 function holidayName(date){const l=String(state.settings.holidays||'').split(/\n/).find(x=>pd(x)!=null&&fd(pd(x))===date);return l?l.replace(/^\S+\s*/,'')||'國定假日':'';}
 
@@ -816,7 +823,12 @@ function schedDay(sc,idx){sc=sc||defaultSched();const k='d'+idx;if(sc[k])return 
   const grp=idx===0?'sun':idx===6?'sat':'weekday',g=sc[grp]||{};return Object.assign({},g,{type:dayType(g,grp)});}
 function schedFor(e,wk,date){const i=WK.indexOf(wk),g=schedDay(e.sched,i<0?1:i),s=seasonOf(date);
   let start=g.start,end=g.end;if(s==='summer'&&g.sStart&&g.sEnd){start=g.sStart;end=g.sEnd;}if(s==='winter'&&g.wStart&&g.wEnd){start=g.wStart;end=g.wEnd;}
-  return {type:g.type,start,end,season:s};}
+  let type=g.type,swapped='';const SW=swapSet();
+  // 調移只適用於排班中有「休息日」的員工（例如兼職人員週六本來就是工作日，則不調移）
+  const hasRest=SW.size&&[0,1,2,3,4,5,6].some(k=>schedDay(e.sched,k).type==='rest');
+  if(SW.size&&hasRest){if(SW.has(date)){if(type!=='off'){type='rest';swapped='toRest';}}
+    else if(type==='rest'){const wk=weekKey(date);if([...SW].some(x=>weekKey(x)===wk)){type='work';swapped='toWork';}}}
+  return {type,start,end,season:s,swapped};}
 function schedSpan(e,wk,date){const g=schedFor(e,wk,date);if(g.start&&g.end){const h=(timeToMin(g.end)-timeToMin(g.start))/60;if(h>0)return h;}return null;}
 function workedH(e,d){if(d.hours!=null&&d.hours!=='')return +d.hours;
   if(e.hourBasis==='sched'&&(d.punches||0)>=2){const s=schedSpan(e,d.wk,d.date);if(s!=null)return s;}
@@ -1390,7 +1402,7 @@ function renderDay(){
   const autoH=d=>{const st=d.status||'work';if(st==='work'||st==='missing')return D2(workedH(e,Object.assign({},d,{hours:null})));if(st==='notScheduled')return '';const s=schedSpan(e,d.wk,d.date);return hrly?(s!=null?D2(s):'均'):HPD;};
   const color={pending:'var(--neg)',missing:'var(--neg)',absent:'var(--neg)',holiday:'var(--gold)',off:'var(--gold)'};
   const rows=arr.map((d,i)=>{const st=d.status||'work',hn=hol.has(d.date)?holidayName(d.date):'';
-    return `<tr style="${st==='notScheduled'?'opacity:.5':''}"><td style="white-space:nowrap">${esc((d.date||'').slice(5))}（${esc(d.wk||wkOf(d.date))}）${hn?`<br><span style="font-size:11px;color:var(--gold)">${esc(hn)}</span>`:''}</td>
+    return `<tr style="${st==='notScheduled'?'opacity:.5':''}"><td style="white-space:nowrap">${esc((d.date||'').slice(5))}（${esc(d.wk||wkOf(d.date))}）${hn?`<br><span style="font-size:11px;color:var(--gold)">${esc(hn)}</span>`:''}${(()=>{const sw=schedFor(e,d.wk||wkOf(d.date),d.date).swapped;return sw?`<br><span style="font-size:11px;color:var(--accent)">${sw==='toRest'?'休息日調移至本日':'原休息日改為工作日'}</span>`:'';})()}</td>
       <td style="white-space:nowrap"><input type="time" class="tm" value="${esc(d.in||'')}"${dis} onchange="editDet(${i},'in',this.value)">–<input type="time" class="tm" value="${esc(d.out||'')}"${dis} onchange="editDet(${i},'out',this.value)">
         ${lock?'':`<button class="btn ghost tiny" title="帶入排班時間" onclick="fillSched(${i})">⟲</button>`}<br><span style="font-size:11px;color:var(--muted)">${d.punches?(d.manual?'手動 ':'打卡 ')+D2((+d.wh||0)/60)+'h':'無打卡'}</span></td>
       <td><select${dis} onchange="editDet(${i},'kind',this.value)">${opt(DKIND,d.kind||'work')}</select></td>
