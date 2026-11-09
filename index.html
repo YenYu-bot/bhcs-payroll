@@ -161,11 +161,12 @@ table.data input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 
 .slip-foot .lbl{font-size:14px;font-weight:700;letter-spacing:2px}
 .slip-foot .net{font-family:var(--mono);font-size:26px;font-weight:800;color:var(--pos)}
 .slip-foot .net::before{content:"NT$ ";font-size:14px;color:var(--muted);font-weight:600}
-.slip-att{display:grid;grid-template-columns:1.1fr 2fr 1fr 1fr 1fr 1fr;border-top:1px solid var(--line);background:var(--accent-wash)}
-.slip-att>div{padding:9px 12px;border-right:1px solid var(--line)}.slip-att>div:last-child{border-right:none}
+.li .lb small.hd{display:block;font-size:11px;color:var(--muted);font-weight:400;margin-top:1px}
+.slip-att{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border-top:1px solid var(--line);background:var(--accent-wash)}
+.slip-att .wide{grid-column:span 2}.slip-att>div{padding:9px 12px;border-right:1px solid var(--line)}.slip-att>div:last-child{border-right:none}
 .slip-att .k{font-size:11px;color:var(--muted);margin-bottom:3px}.slip-att .v{font-size:13px;font-weight:600;color:var(--ink);line-height:1.45}
 .slip-att small{font-size:10.5px;font-weight:400;color:var(--muted)}
-@media (max-width:760px){.slip-att{grid-template-columns:1fr 1fr}.slip-att .wide{grid-column:1/-1}}
+@media (max-width:760px){.slip-att{grid-auto-flow:row;grid-template-columns:1fr 1fr}.slip-att .wide{grid-column:1/-1}}
 .slip-meta{padding:9px 22px;background:var(--paper);border-top:1px solid var(--line);display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .slip-meta b{color:var(--ink-soft);font-family:var(--mono)}
 .slip-late{padding:8px 22px;background:#fffdf6;border-top:1px dashed var(--line);font-size:11.5px;color:var(--ink-soft)}
@@ -992,9 +993,9 @@ function computeLive(e,ym,r){
   if(!absentOK)absentDeduct=0;
   // 全勤
   const perfectFull=pr.employed?(+e.perfect||0):0;let perfect=perfectFull,perfectStatus='ok',perfectNote='';
-  if(A.absent>0&&absentOK){perfect=0;perfectStatus='void';perfectNote='曠職 '+A.absent+' 天，取消全勤';}
-  else if(e.voidPersonal!==false&&perD>0){perfect=0;perfectStatus='void';perfectNote='請事假，取消全勤';}
-  else if(L.voids){perfect=0;perfectStatus='void';perfectNote=L.offsetFallback?'遲到早退逾寬限且特休不足，取消全勤':'遲到早退逾寬限，取消全勤';}
+  if(A.absent>0&&absentOK&&perfectFull>0){perfect=0;perfectStatus='void';perfectNote='曠職 '+A.absent+' 天，取消全勤';}
+  else if(e.voidPersonal!==false&&perD>0&&perfectFull>0){perfect=0;perfectStatus='void';perfectNote='請事假，取消全勤';}
+  else if(L.voids&&perfectFull>0){perfect=0;perfectStatus='void';perfectNote=L.offsetFallback?'遲到早退逾寬限且特休不足，取消全勤':'遲到早退逾寬限，取消全勤';}
   else if(e.sickPolicy!=='none'&&sickD>0&&perfectFull>0){perfect=Math.max(0,Math.round(perfectFull*(1-sickD/30)));perfectStatus='cut';perfectNote='病假 '+D2(sickD)+' 日，全勤按比例扣 '+N(perfectFull-perfect);}
   if(perfectFull-perfect>0&&decide('perfect',perfectStatus==='void'?'取消全勤獎金':'全勤獎金按比例扣發',perfectNote,perfectFull-perfect)==='no'){perfect=perfectFull;perfectNote+='（審核不採用，照發）';perfectStatus='ok';}
   // 加班費（自動計算、定額補足）
@@ -1032,7 +1033,7 @@ function computeLive(e,ym,r){
   const mAdd=mi.filter(x=>x.type==='add').map(x=>({l:uq(x.name),v:Math.round(+x.amount||0)})),mDed=mi.filter(x=>x.type!=='add').map(x=>({l:uq(x.name),v:Math.round(+x.amount||0)}));
   if(pr.employed&&pr.partial){const db=(hrly?0:(+e.base||0)-baseAmt)+((+e.summer||0)-summerAmt)+fixAdd.reduce((s,x)=>s+x.full-x.v,0);
     if(db&&decide('partial','破月底薪／固定加項按在職日數比例',`在職 ${pr.inDays}/${pr.monthDays} 日，比例 ${pr.factor.toFixed(3)}（基準 ${pr.baseDays} 日）`,db)==='no'){baseAmt=hrly?0:(+e.base||0);summerAmt=+e.summer||0;fixAdd.forEach(x=>x.v=x.full);}}
-  if((e.lateePolicy||'annualOffset')==='annualOffset'&&L.over)decide('lateOffset','遲到早退以特休抵扣（須員工申請或同意）',
+  if((e.lateePolicy||'annualOffset')==='annualOffset'&&L.over&&!L.paidByPunch)decide('lateOffset','遲到早退以特休抵扣（須員工申請或同意）',
     `應抵 ${D2(L.needMin/60)} 小時（${L.count} 次${+e.lateUnit?'，每次以 '+e.lateUnit+' 分為單位':''}），可抵 ${D2(L.offsetDays*HPD)} 小時`+(L.remMin>0.5?`，不足 ${D2(L.remMin/60)} 小時改${e.lateFallback==='void'?'取消全勤':'扣薪'}`:'')+'。§38：特休由勞工排定，請確認員工已申請；不採用則全部改'+(e.lateFallback==='void'?'取消全勤':'扣薪'),
     0,'n'+L.needMin+'c'+L.count);
   let lateDeduct=L.deduct;if(lateDeduct&&decide('late','遲到早退扣薪',`${L.remMin!=null?'未抵扣 '+D2(L.remMin)+' 分':'累計 '+L.totalMin+' 分'} × 時薪 ${N(hr)}`,lateDeduct)==='no')lateDeduct=0;
@@ -1063,7 +1064,9 @@ function computeLive(e,ym,r){
   let annualLeft=LS.cur?D2(LS.cur.remaining):0;
   if(ov['特休剩餘']!=null&&ov['特休剩餘']!==''){annualLeft=+ov['特休剩餘'];ovList.push('特休剩餘');}
   const absence={absentDays:A.absent,pendingDays:A.pending,offsetH:D2(L.offsetDays*HPD),pendingH:D2(A.pendingH),absentH:D2(A.absentH),lateMin:L.totalMin,missing:A.missing,total:D2(A.pendingH+A.absentH+L.totalMin/60)};
-  return {customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
+  const hoursInfo=hrly?{rate:hr,regH:D2(A.regH+(+r.att.extraHours||0)),extraH:D2(+r.att.extraHours||0),holidayH:D2(A.holidayH),offH:D2(A.offH),paidLeaveH:D2(ML.paidLeave),annualH:D2(annualH),
+    halfH:D2((sickHalf+menOwn)*HPD),typhoonH:D2(typhoonPaid?A.typhoonH:0),typhoonWorkH:D2(A.typhoonWorkH)}:null;
+  return {hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
     hr,dw,wage:wageBase(e),ot:{weekday:ot.weekday,rest:ot.rest,holiday:ot.holiday,offday:ot.offday,pay:ot.pay,count:ot.count,hours:ot.hours,ext:ot.ext},
     typhoon:{days:A.typhoon,h:D2(A.typhoonH),workH:D2(A.typhoonWorkH)},attend:{sched:A.sched,worked:A.worked,workH:D2(A.workH),regH:D2(A.regH+(+r.att.extraHours||0)),holidayWork:A.holidayWork,hasDays:(r.days||[]).length>0},absence,
     leave:{sick:D2(sickD),men:D2(menD),personal:D2(perD),family:D2(famD),paid:D2(paidD),annualH:D2(annualH),sickYear:D2(sickPrior+sickAll),sickFullDays:D2(sickFull)},
@@ -1468,6 +1471,17 @@ function lateText(c){if(!c.late.count)return '';const L=c.late;const days=L.deta
 function leaveText(c){const l=c.leave,p=[];if(c.typhoon&&c.typhoon.days)p.push('颱風假 '+c.typhoon.days+' 天');if(c.typhoon&&c.typhoon.workH)p.push('天災停班日出勤 '+c.typhoon.workH+'h');
   if(l.paid)p.push('婚喪公假 '+l.paid+' 日');
   if(l.sickFullDays)p.push('病假逾年度 30 日 '+l.sickFullDays+' 日不給薪');return p.join(' / ');}
+/* 計時人員：各項目的「時數 × 時薪」 */
+function hourDetail(c,label){const h=c.hoursInfo;if(!h)return '';const R=N(h.rate),o=c.ot||{},f=(x,m)=>x?`${D2(x)}h${m?'×'+m:''}`:'';
+  if(label==='工時工資')return `${h.regH}h × ${R}`+(h.extraH?`（含手動調整 ${h.extraH}h）`:'');
+  if(label==='假日/特休照給'){const p=[h.holidayH&&'國定假日 '+h.holidayH+'h',h.offH&&'公司休假 '+h.offH+'h',h.paidLeaveH&&'婚喪公假 '+h.paidLeaveH+'h',h.annualH&&'特休 '+h.annualH+'h'].filter(Boolean);
+    const t=D2(h.holidayH+h.offH+h.paidLeaveH+h.annualH);return p.length?`${p.join('、')}，共 ${t}h × ${R}`:'';}
+  if(label==='病假/生理假半薪')return h.halfH?`${h.halfH}h × ${R} × ½`:'';
+  if(label==='颱風假照給')return h.typhoonH?`${h.typhoonH}h × ${R}`:'';
+  if(label==='天災出勤加給')return h.typhoonWorkH?`${h.typhoonWorkH}h × ${R}`:'';
+  if(label==='加班費'){const p=[o.weekday&&'單日逾8h '+D2(o.weekday)+'h',o.rest&&'休息日 '+D2(o.rest)+'h',o.holiday&&'國定假日 '+D2(o.holiday)+'h',o.offday&&'例假 '+D2(o.offday)+'h'].filter(Boolean);return p.length?p.join('、')+`（時薪 ${R}，依法定倍率）`:'';}
+  return '';}
+function hoursTotal(c){const h=c.hoursInfo;if(!h)return null;const paid=D2(h.holidayH+h.offH+h.paidLeaveH+h.annualH+h.typhoonH);return {work:h.regH,paid,ot:D2((c.ot||{}).hours||0)};}
 /* 薪資單「出勤摘要」：缺勤狀況、事假、病假、特休（本月）、特休剩餘 */
 function fmtH(h){h=D2(h||0);return h?`${D2(h/HPD)} 天（${h} 時）`:'0 天';}
 function attSum(c){const a=c.absence||{},l=c.leave||{},t=c.attend||{},L=c.late||{};
@@ -1478,7 +1492,8 @@ function attSum(c){const a=c.absence||{},l=c.leave||{},t=c.attend||{},L=c.late||
     personal:fmtH(((l.personal||0)+(l.family||0))*HPD)+(l.family?`<br><small>含家庭照顧 ${D2(l.family)} 天</small>`:''),
     sick:fmtH((l.sick||0)*HPD)+(l.men?`<br><small>另生理假 ${D2(l.men)} 天</small>`:''),annual:fmtH(annualH),annualUsed,left:c.annualLeft};}
 function attPlain(c){const s=attSum(c);const strip=x=>String(x).replace(/<br><small>/g,'，').replace(/<\/small>/g,'');
-  return [['出勤',s.att],['缺勤狀況',s.abs],['事假',strip(s.personal)],['病假',strip(s.sick)],['特休（本月）',s.annual],['特休剩餘',s.left+' 天']];}
+  const t=hoursTotal(c);
+  return [['出勤',s.att],...(t?[['計時工時',`${t.work} 時（照給 ${t.paid} 時、加班 ${t.ot} 時）`]]:[]),['缺勤狀況',s.abs],['事假',strip(s.personal)],['病假',strip(s.sick)],['特休（本月）',s.annual],['特休剩餘',s.left+' 天']];}
 function absText(c){if(!c.absence)return '';const a=c.absence,t=c.attend||{};const p=[];if(a.pendingH)p.push('待確認 '+a.pendingH+'h');if(a.absentH)p.push('曠職 '+a.absentH+'h');if(a.lateMin)p.push('遲到早退 '+a.lateMin+' 分');
   return (t.hasDays?`<span>應出勤 <b>${t.sched}</b> 天 / 出勤 <b>${t.worked}</b> 天${c.payType==='hourly'?` / 計薪工時 <b>${t.regH}</b> h`:''}</span>`:'')
     +`<span>缺勤時數 <b style="color:${a.total?'var(--neg)':'inherit'}">${a.total} 小時</b>${p.length?'（'+p.join('、')+'）':''}${a.missing?` <span style="color:var(--neg)">漏打卡 ${a.missing} 天未補</span>`:''}</span>`;}
@@ -1494,7 +1509,7 @@ function renderSlips(){
     const dis=c.locked?' disabled':'';
     const mark=l=>c.overridden.includes(l)?' <span style="color:var(--gold);font-size:11px">✎</span>':'';
     const inp=(lb,val,neg)=>`<span class="v">${neg&&val?'<span class="mn">-</span>':''}<input class="slip-in${c.overridden.includes(lb)?' ovon':''}" type="text" inputmode="decimal" value="${N(val)}" data-eid="${e.id}" data-lb="${esc(lb)}"${dis} onchange="slipEdit(this)" title="點此可直接修改"></span>`;
-    const earn=visibleRows(c,c.earnings).map(x=>`<div class="li"><span class="lb">${x[0]}${mark(x[0])}</span>${inp(x[0],x[1],false)}</div>`).join('');
+    const earn=visibleRows(c,c.earnings).map(x=>{const hd=hourDetail(c,x[0]);return `<div class="li"><span class="lb">${x[0]}${mark(x[0])}${hd?`<small class="hd">${esc(hd)}</small>`:''}</span>${inp(x[0],x[1],false)}</div>`;}).join('');
     const ded=visibleRows(c,c.deducts).map(x=>`<div class="li${x[1]?'':' zero'}"><span class="lb">${x[0]}${mark(x[0])}</span>${inp(x[0],x[1],true)}</div>`).join('');
     const notes=[];const lt=lateText(c);if(lt)notes.push(lt);if(c.perfectNote)notes.push('全勤：'+c.perfectNote);if(c.otNote)notes.push('加班費：'+c.otNote);(c.warns||[]).forEach(w=>notes.push('⚠ '+w));c.payNotes.forEach(n=>notes.push('特休未休工資：'+n+'（日薪 '+N(c.dw)+'）'));
     const cbadge=c.confirmed?'<span class="cbadge yes">✓ 已確認（鎖定）</span>':'<span class="cbadge no">尚未確認</span>';
@@ -1511,6 +1526,7 @@ function renderSlips(){
       <div class="slip-foot"><span class="lbl">實發金額</span><span class="net">${N(c.net)}</span></div>
       ${(()=>{const s=attSum(c);return `<div class="slip-att">
         <div><div class="k">出勤</div><div class="v">${s.att}</div></div>
+        ${(()=>{const t=hoursTotal(c);return t?`<div><div class="k">計時工時</div><div class="v">${t.work} 時<br><small>照給 ${t.paid} 時・加班 ${t.ot} 時</small></div></div>`:'';})()}
         <div class="wide"><div class="k">缺勤狀況</div><div class="v">${s.abs}</div></div>
         <div><div class="k">事假</div><div class="v">${s.personal}</div></div>
         <div><div class="k">病假</div><div class="v">${s.sick}</div></div>
@@ -1941,7 +1957,8 @@ function exportWord(){
   const slips=state.employees.map((e,idx)=>{
     const c=compute(e),er=visibleRows(c,c.earnings),de=visibleRows(c,c.deducts),n=Math.max(er.length,de.length);let body='';
     for(let i=0;i<n;i++){const eL=er[i]?er[i][0]:'',eV=er[i]?N(er[i][1]):'',dL=de[i]?de[i][0]:'',dV=de[i]?(de[i][1]?'-'+N(de[i][1]):'0'):'';
-      body+=`<tr><td>${eL}</td><td class="r">${eV}</td><td class="dl">${dL}</td><td class="r red">${dV}</td></tr>`;}
+      const hd=er[i]?hourDetail(c,er[i][0]):'';
+      body+=`<tr><td>${eL}${hd?`<br><span class="hd">${esc(hd)}</span>`:''}</td><td class="r">${eV}</td><td class="dl">${dL}</td><td class="r red">${dV}</td></tr>`;}
     const meta=[otText(c)&&'加班 '+otText(c),leaveText(c),'時薪 '+N(c.hr)+(c.payType==='hourly'?'':' / 日薪 '+N(c.dw)),c.pensionEr&&'雇主提繳勞退 '+N(c.pensionEr)].filter(Boolean).join('　·　');
     const notes=[lateText(c),c.perfectNote&&'全勤：'+c.perfectNote,c.otNote&&'加班費：'+c.otNote,...c.payNotes.map(x=>'特休未休工資：'+x),...(c.warns||[]).map(w=>'⚠ '+w)].filter(Boolean);
     return `<div class="slip"${idx<state.employees.length-1?' style="page-break-after:always"':''}>
@@ -1961,7 +1978,7 @@ function exportWord(){
     +'.grid td{border:0.5pt solid #b9c4c9;padding:5px 10px} .grid .th td{background:#e3f0f2;font-weight:bold;color:#0a505c}'
     +'.r{text-align:right} .red{color:#c0392b} .dl{border-left:1.5pt solid #16232e!important}'
     +'.sum td{background:#f2f5f6;font-weight:bold} .net .netlbl{background:#16232e;color:#fff;font-weight:bold;letter-spacing:3px} .net .netval{background:#f2f5f6;font-size:16pt;font-weight:bold;color:#157347}'
-    +'.meta{font-size:8.5pt;color:#666;background:#fafbfb} .att td{font-size:9.5pt;background:#f2f8f9;line-height:1.7}</style></head><body>'+slips+'</body></html>';
+    +'.meta{font-size:8.5pt;color:#666;background:#fafbfb} .att td{font-size:9.5pt;background:#f2f8f9;line-height:1.7} .hd{font-size:8pt;color:#777}</style></head><body>'+slips+'</body></html>';
   dl(new Blob([html],{type:'application/msword'}),'百宏薪資單_'+pTag()+'.doc');toast('已匯出 Word 薪資單');}
 
 /* boot */
