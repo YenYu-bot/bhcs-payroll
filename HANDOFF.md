@@ -74,8 +74,8 @@ state = {
     wagePerfect, wageSummer, fixedItems:[{name,type:'add'|'ded',amount,wage}],
     laborGrade, labor, healthGrade, healthDeps, health, meal, pensionWage, pensionSelf, insAuto,
     hire, leave, leaveSystem:'anniv'|'cal', yearEnd:'pay'|'defer', priorUsed, priorAsOf,
-    sickPolicy:'prorate'|'none', voidPersonal, lateePolicy:'voidPerfect'|'deduct'|'annualOffset',
-    lateGrace, lateUnit, lateFallback:'deduct'|'void',
+    sickPolicy:'prorate'|'none', voidPersonal, lateePolicy:'both'|'voidPerfect'|'deduct'|'annualOffset',  // 預設 both＝取消全勤＋按分鐘扣薪
+    lateGrace, lateUnit, lateFallback:'both'|'deduct'|'void',
     sched:{ tpl:{type,start,end,sStart,sEnd,wStart,wEnd},   // 快速排班範本
             d0..d6:{ type:'work'|'none'|'rest'|'off', start,end, sStart,sEnd, wStart,wEnd, useTpl } } }],  // useTpl＝套用範本（值已複製進該日）
   months: { 'YYYY-MM': { [empId]: {
@@ -101,7 +101,7 @@ state = {
 - **請假（勞工請假規則 §4、§9；性平法 §14、§21）**：病假年度 30 日內半薪、超過不給薪；生理假每年 3 日不併入病假；全勤不得因婚喪公假、家庭照顧假、生理假而扣；病假只能按比例扣全勤（全勤×病假日數÷30）。
 - **特休 12 月結算**：使用者的做法是每年 12 月薪資結算特休，所以新員工預設**曆年制**（施行細則 §24 II ②）；曆年制未休工資在 12 月薪資自動產生（審核 `annualPay`）。週年制年度終結在到職週年日，須 30 日內發給（§24-1），特休總覽會提示並提供「全部改為曆年制」。
 - **單日缺勤逾 1 小時**（`core7` 區段：`absenceItems`、`openAbs`、`setAbs`）：單日遲到加早退超過 60 分、或整天未打卡（且該日是工作日），匯入後自動跳出「缺勤處理」，逐筆選擇假別；時數依 `settings.absUnit` 進位。選定後該日的遲到早退由 `lateRaw` 排除，改由 `dayAgg` 計入假別時數。未處理的筆數納入 `attend` 審核簽章。
-- **遲到早退**：每月寬限；扣薪依實際分鐘數；計時人員依打卡實際工時計薪時不另扣；以特休抵扣依 §38 須員工申請，列入審核。
+- **遲到早退**：每月寬限；超過寬限**預設取消全勤＋按實際分鐘扣薪**（使用者指定的規則；舊資料於 `normalizeState` 一次性轉換並記錄）；扣薪依實際分鐘數；計時人員依打卡實際工時計薪時不另扣；以特休抵扣依 §38 須員工申請，列入審核。
 - **破月**：底薪、津貼、固定加項依在職日數比例；勞保、勞退依投保日數（每月以 30 日計）；健保看月底在保。
 - **打卡機檔案格式**（真實檔已驗證）：欄位為「系統編號、員工編號、中文姓名、英文姓名、上班天數、異常天數、上班時數、序號、日期、星期、打卡時間、備註」。每位員工第一列有姓名；每天有一列只有日期，下一列起才是打卡時間；備註 `WH=08H05` 是當日工時，`*WH=` 表示異常。**列出的日期＝排班日**（含未打卡日），未打卡＝列出天數－上班天數。
 
@@ -150,5 +150,6 @@ match /{document=**} { allow read, write: if false; }
 3. 人工審核、薪資紀錄、異動紀錄、密碼加密
 4. 每週七天彈性排班、計時工時輸入、特休抵扣遲到、自訂薪資項目（並修正計時員工表單未切換的 bug）
 5. 雲端同步（Firebase，端對端加密）
+8. 遲到早退逾寬限：預設取消全勤＋按分鐘扣薪
 7. 特休 12 月結算（預設曆年制）、單日缺勤逾 1 小時跳出假別選擇、休息日／例假日未打卡不列為缺勤
 6. 快速排班：排班表最上方「快速」列，勾選的日子套用（`applyTpl()`），未勾選手動輸入
