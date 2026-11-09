@@ -67,7 +67,7 @@ Repo 只有三個檔案：`index.html`（系統本體）、`README.md`、`HANDOF
 ```js
 state = {
   version: 3,
-  settings: { typhoonDates:'YYYY-MM-DD 說明\n…', typhoonPay:'paid'|'unpaid', typhoonExtra:'0'|'0.5'|'1', absUnit:0|30|60, leaveDefault:'cal', prorateBase:'cal'|'30', calRound, holidays:'YYYY-MM-DD 名稱\n…',
+  settings: { typhoonDates:'YYYY-MM-DD 說明\n…', typhoonPay:'unpaid'|'paid'（預設不給薪）, typhoonExtra:'0'|'0.5'|'1', absUnit:0|30|60, leaveDefault:'cal', prorateBase:'cal'|'30', calRound, holidays:'YYYY-MM-DD 名稱\n…',
               seasons:{summerStart,summerEnd,winterStart,winterEnd} },
   employees: [{ id, name, role, empNo, payType:'monthly'|'hourly', base, rate, ptRatio,
     hourBasis:'punch'|'sched', hourRound, brkMin, brkAfter, summer, perfect, otFixed,
@@ -100,7 +100,7 @@ state = {
 - **加班 §24／§32／§36／§39／§40**：逐日計算；平日延長 4/3、5/3；休息日 4/3、5/3、8/3；國定假日 8 小時內加發一日工資（計時人員為加發時薪×時數）；例假日出勤加倍並警示；延長工時超過 46 小時警示；定額加班費＝max(定額, 法定)。
 - **請假（勞工請假規則 §4、§9；性平法 §14、§21）**：病假年度 30 日內半薪、超過不給薪；生理假每年 3 日不併入病假；全勤不得因婚喪公假、家庭照顧假、生理假而扣；病假只能按比例扣全勤（全勤×病假日數÷30）。
 - **特休 12 月結算**：使用者的做法是每年 12 月薪資結算特休，所以新員工預設**曆年制**（施行細則 §24 II ②）；曆年制未休工資在 12 月薪資自動產生（審核 `annualPay`）。週年制年度終結在到職週年日，須 30 日內發給（§24-1），特休總覽會提示並提供「全部改為曆年制」。
-- **颱風假**（勞動部「天然災害發生事業單位勞工出勤管理及工資給付要點」，114-09-19 修正）：`settings.typhoonDates` 的日子，沒打卡＝日狀態 `typhoon`、有打卡＝類型 `typhoonWork`，當天遲到早退不計（`lateRaw` 排除）；不算缺勤、不影響全勤。未出勤工資依 `typhoonPay`（預設照給；不給薪時月薪扣日薪，審核 `typhoon`）；計時人員照給排班時數（審核 `typhoon`）；出勤加給依 `typhoonExtra`（審核 `typhoonExtra`）。缺勤處理與 CSV 假別也可選颱風假。
+- **颱風假**（勞動部「天然災害發生事業單位勞工出勤管理及工資給付要點」，114-09-19 修正）：`settings.typhoonDates` 的日子，沒打卡＝日狀態 `typhoon`、有打卡＝類型 `typhoonWork`，當天遲到早退不計（`lateRaw` 排除）；不算缺勤、不影響全勤。未出勤工資依 `typhoonPay`（使用者確認：勞動部為「宜不扣發」之建議，預設不給薪，月薪扣日薪並審核 `typhoon`；可改照給）；計時人員照給排班時數（審核 `typhoon`）；出勤加給依 `typhoonExtra`（審核 `typhoonExtra`）。缺勤處理與 CSV 假別也可選颱風假。
 - **單日缺勤逾 1 小時**（`core7` 區段：`absenceItems`、`openAbs`、`setAbs`）：單日遲到加早退超過 60 分、或整天未打卡（且該日是工作日），匯入後自動跳出「缺勤處理」，逐筆選擇假別；時數依 `settings.absUnit` 進位。選定後該日的遲到早退由 `lateRaw` 排除，改由 `dayAgg` 計入假別時數。未處理的筆數納入 `attend` 審核簽章。
 - **遲到早退**：每月寬限；超過寬限的處理**順序**（使用者指定）：① 單日逾 1 小時者先在「缺勤處理」選假別 → ② 其餘分鐘以特休優先抵扣（`annualOffset`，依抵扣單位進位，需審核 `lateOffset`） → ③ 特休不足或沒有特休的部分取消全勤＋按實際分鐘比例扣薪（`lateFallback:'both'`）。舊資料由 `normalizeState`（`latePolicyV3`）一次性轉換並記錄；扣薪依實際分鐘數；計時人員依打卡實際工時計薪時不另扣；以特休抵扣依 §38 須員工申請，列入審核。
 - **破月**：底薪、津貼、固定加項依在職日數比例；勞保、勞退依投保日數（每月以 30 日計）；健保看月底在保。

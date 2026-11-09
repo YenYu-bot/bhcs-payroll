@@ -318,7 +318,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
         <li><b>加班費</b>（§24、§39），<b>逐日</b>計算：平日延長工時前 2 時 <code>×4/3</code>、再 2 時 <code>×5/3</code>；休息日前 2 時 <code>×4/3</code>、2–8 時 <code>×5/3</code>、8–12 時 <code>×8/3</code>；國定假日出勤 8 小時內加發 1 日工資，超過 8 小時部分 <code>×4/3</code>、<code>×5/3</code>。</li>
         <li><b>病假</b>（請假規則 §4）：一年內未超過 30 日部分半薪，超過部分不給薪（依同年度各月累計）。<b>生理假</b>每年 3 日不併入病假，半薪；超過併入病假。<b>事假</b>（含家庭照顧假）不給薪。<b>婚、喪、公假</b>照給工資。</li>
         <li><b>全勤獎金</b>（請假規則 §9、性平法 §21）：婚喪公假、家庭照顧假、生理假<b>不得</b>影響全勤；普通傷病假只能按日數比例扣發（<code>全勤 × 病假日數 ÷ 30</code>），或選擇不扣；一般事假可設定是否取消。</li>
-        <li><b>颱風假</b>（天然災害發生事業單位勞工出勤管理及工資給付要點）：停止上班日未出勤不算缺勤、不扣全勤、不計遲到；工資預設照給（可設定不給薪，須勞資協商）；照常出勤者可設定加給。相關金額列入審核。</li>
+        <li><b>颱風假</b>（天然災害發生事業單位勞工出勤管理及工資給付要點）：停止上班日未出勤不算缺勤、不扣全勤、不計遲到；工資預設不給薪（依勞資約定，應載明於勞動契約或工作規則；可改為照給）；照常出勤者可設定加給。相關金額列入審核。</li>
         <li><b>單日缺勤逾 1 小時</b>：遲到＋早退單日合計超過 60 分，或整天未打卡，匯入出勤後自動跳出「缺勤處理」，逐筆選擇事假、病假、特休等（依「請假單位」進位計時數）；選定後該日不再另計遲到早退。尚未選擇時薪資單無法確認。</li>
         <li><b>特休 12 月結算</b>：曆年制（每年 1/1–12/31，施行細則 §24 第 2 項第 2 款）的未休特休在 12 月薪資自動結算並列入審核；週年制的年度終結在到職週年日，須於 30 日內發給（§24-1），無法統一於 12 月。新員工預設曆年制。</li>
         <li><b>特休抵扣遲到早退</b>：依 §38，特休期日由勞工排定，雇主不得片面以特休抵扣。選擇此方式時，系統計算應抵時數（可設定每次以 15／30／60 分為單位），並列為待審核項目，請確認員工已申請或同意；特休不足部分依設定扣薪或取消全勤。</li>
@@ -367,9 +367,9 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
   </details>
   <details class="rules" style="margin-top:12px">
     <summary>颱風假／天災停止上班日</summary>
-    <div class="rc">依勞動部「天然災害發生事業單位勞工出勤管理及工資給付要點」：轄區首長通報停止上班，勞工未出勤者，<b>不得視為曠工、遲到或強迫改請事假等假別，不得扣發全勤獎金、不得要求補班</b>；工資勞動部建議宜不扣發；照常出勤者宜再加給。
+    <div class="rc">依勞動部「天然災害發生事業單位勞工出勤管理及工資給付要點」：轄區首長通報停止上班，勞工未出勤者，<b>不得視為曠工、遲到或強迫改請事假等假別，不得扣發全勤獎金、不得要求補班</b>；未出勤時段的工資由勞雇雙方約定（勞動部建議宜不扣發，非強制），應事先於勞動契約或工作規則中載明；照常出勤者宜再加給。
       <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:10px">
-        <div class="f"><label>未出勤的工資</label><select id="tyPay"><option value="paid">照給（勞動部建議）</option><option value="unpaid">不給薪（須勞資協商）</option></select></div>
+        <div class="f"><label>未出勤的工資</label><select id="tyPay"><option value="unpaid">不給薪（依勞動契約／工作規則約定）</option><option value="paid">照給（優於法令；勞動部建議宜不扣發）</option></select></div>
         <div class="f"><label>照常出勤者加給</label><select id="tyExtra"><option value="0">不另外加給</option><option value="1">加發一倍時薪</option><option value="0.5">加發半倍時薪</option></select></div>
       </div>
       <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-top:10px">停止上班日期（每行一天，<code>YYYY-MM-DD 說明</code>）：匯入打卡時，這些日子沒打卡自動標為颱風假、有打卡標為天災停班日出勤，當天遲到早退不計。</label>
@@ -717,7 +717,7 @@ const HOLIDAYS_2026=`2026-01-01 元旦
 2026-10-26 光復節補假
 2026-12-25 行憲紀念日`;
 const MIN_MONTH=29500,MIN_HOUR=196;
-const DEF_SETTINGS=()=>({typhoonDates:'',typhoonPay:'paid',typhoonExtra:'0',absUnit:30,leaveDefault:'cal',prorateBase:'cal',calRound:'none',holidays:HOLIDAYS_2026,seasons:{summerStart:'',summerEnd:'',winterStart:'',winterEnd:''}});
+const DEF_SETTINGS=()=>({typhoonDates:'',typhoonPay:'unpaid',typhoonExtra:'0',absUnit:30,leaveDefault:'cal',prorateBase:'cal',calRound:'none',holidays:HOLIDAYS_2026,seasons:{summerStart:'',summerEnd:'',winterStart:'',winterEnd:''}});
 let state={version:3,settings:DEF_SETTINGS(),employees:[],months:{}};
 let migrated=false;
 
@@ -757,7 +757,8 @@ function migrateV2(old,ym){
   if(Object.keys(M).length)s.months[ym]=M;
   return s;}
 
-function normalizeState(){if(state.employees&&!(state.settings||{}).latePolicyV3){state.settings=state.settings||{};state.settings.latePolicyV3=1;state.settings.latePolicyV2=1;
+function normalizeState(){if(state.settings&&!state.settings.typhoonPayV2){state.settings.typhoonPayV2=1;if(state.settings.typhoonPay!=='unpaid'){state.settings.typhoonPay='unpaid';
+    (state.log=state.log||[]).push({t:new Date().toISOString(),action:'修改颱風假工資',detail:'照給 → 不給薪（依勞資約定；勞動部為「宜不扣發」之建議）',ym:'',emp:''});}}if(state.employees&&!(state.settings||{}).latePolicyV3){state.settings=state.settings||{};state.settings.latePolicyV3=1;state.settings.latePolicyV2=1;
     (state.employees||[]).forEach(e=>{const o=e.lateePolicy||'voidPerfect';if(o==='annualOffset'&&e.lateFallback)return;
       e.lateePolicy='annualOffset';e.lateFallback='both';if(e.lateUnit==null||e.lateUnit==='')e.lateUnit=String((state.settings.absUnit??30));
       (state.log=state.log||[]).push({t:new Date().toISOString(),action:'修改員工資料',detail:'遲到處理 '+o+' → 特休優先抵扣，不足再取消全勤＋扣薪（系統規則更新）',ym:'',emp:e.name});});}if(state.employees&&!(state.settings||{}).latePolicyV2){state.settings=state.settings||{};state.settings.latePolicyV2=1;
@@ -1026,7 +1027,7 @@ function computeLive(e,ym,r){
   // 颱風假（天然災害停止上班）：不得視為曠工、扣全勤；工資依設定（勞動部：宜不扣發）
   let typhoonDeduct=0,typhoonPaid=0,typhoonExtra=0;
   if(A.typhoon){const amt=hrly?Math.round(A.typhoonH*hr):Math.round(dw*A.typhoonH/HPD);
-    if(state.settings.typhoonPay==='unpaid'){if(!hrly&&decide('typhoon','颱風假不給薪',`${A.typhoon} 天 ${D2(A.typhoonH)} 小時（勞資協商不給薪；勞動部建議宜不扣發）`,amt)!=='no')typhoonDeduct=amt;}
+    if(state.settings.typhoonPay==='unpaid'){if(!hrly&&decide('typhoon','颱風假不給薪',`${A.typhoon} 天 ${D2(A.typhoonH)} 小時（依勞資約定不給薪）`,amt)!=='no')typhoonDeduct=amt;}
     else if(hrly&&decide('typhoon','颱風假照給工資（計時）',`${A.typhoon} 天 ${D2(A.typhoonH)} 小時 × 時薪 ${N(hr)}`,amt)!=='no')typhoonPaid=amt;}
   if(A.typhoonWorkH&&+state.settings.typhoonExtra>0){const amt=Math.round(hr*A.typhoonWorkH*(+state.settings.typhoonExtra));
     if(decide('typhoonExtra','天災停班日出勤加給',`出勤 ${D2(A.typhoonWorkH)} 小時 × 時薪 ${N(hr)}${+state.settings.typhoonExtra!==1?' × '+state.settings.typhoonExtra:''}`,amt)!=='no')typhoonExtra=amt;}
@@ -1952,7 +1953,7 @@ function exportWord(){
   dl(new Blob([html],{type:'application/msword'}),'百宏薪資單_'+pTag()+'.doc');toast('已匯出 Word 薪資單');}
 
 /* boot */
-function bootUI(){$('typhoonList').value=state.settings.typhoonDates||'';$('tyPay').value=state.settings.typhoonPay||'paid';$('tyExtra').value=String(state.settings.typhoonExtra||'0');$('absUnit').value=String(state.settings.absUnit??30);$('prorateBase').value=state.settings.prorateBase;$('calRound').value=state.settings.calRound;$('holidayList').value=state.settings.holidays||'';
+function bootUI(){$('typhoonList').value=state.settings.typhoonDates||'';$('tyPay').value=state.settings.typhoonPay||'unpaid';$('tyExtra').value=String(state.settings.typhoonExtra||'0');$('absUnit').value=String(state.settings.absUnit??30);$('prorateBase').value=state.settings.prorateBase;$('calRound').value=state.settings.calRound;$('holidayList').value=state.settings.holidays||'';
   ['summerStart','summerEnd','winterStart','winterEnd'].forEach(k=>$('ss_'+k).value=(state.settings.seasons||{})[k]||'');renderActive();resetIdle();
   $('secBtn').textContent=sec.key?'🔒 密碼保護：已啟用':'🔓 密碼保護：未啟用';}
 $('holidayList').addEventListener('change',()=>{state.settings.holidays=$('holidayList').value;addLog('修改國定假日清單','');save();renderActive();toast('已更新假日清單');});
