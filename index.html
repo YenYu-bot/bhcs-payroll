@@ -828,9 +828,12 @@ function schedDay(sc,idx){sc=sc||defaultSched();const k='d'+idx;if(sc[k])return 
 function schedFor(e,wk,date){const i=WK.indexOf(wk),g=schedDay(e.sched,i<0?1:i),s=seasonOf(date);
   let start=g.start,end=g.end;if(s==='summer'&&g.sStart&&g.sEnd){start=g.sStart;end=g.sEnd;}if(s==='winter'&&g.wStart&&g.wEnd){start=g.wStart;end=g.wEnd;}
   let type=g.type,swapped='';const SW=swapSet();
-  // 調移只適用於排班中有「休息日」的員工（例如兼職人員週六本來就是工作日，則不調移）
-  const hasRest=SW.size&&[0,1,2,3,4,5,6].some(k=>schedDay(e.sched,k).type==='rest');
-  if(SW.size&&hasRest){if(SW.has(date)){if(type!=='off'){type='rest';swapped='toRest';}}
+  // 調移只適用於「該週休息日剛好是國定假日」的員工（例：週六休息日遇國慶 → 10/9 改休息日、10/10 改工作日並放假）。
+  // 休息日不在國定假日的員工（例如週三休息的兼職）、以及國定假日不排班的計時人員，一律不調移
+  const swapApplies=wkDate=>{if(isHourly(e)&&state.settings.hourlyHolidayOff!==false)return false;
+    const ws=pd(weekKey(wkDate));if(ws==null)return false;const HS=holidaySet();
+    for(let k=0;k<7;k++){const t=ws+k*DAY;if(schedDay(e.sched,new Date(t).getUTCDay()).type==='rest'&&HS.has(fd(t)))return true;}return false;};
+  if(SW.size&&[...SW].some(x=>weekKey(x)===weekKey(date))&&swapApplies(date)){if(SW.has(date)){if(type!=='off'){type='rest';swapped='toRest';}}
     else if(type==='rest'){const wk=weekKey(date);if([...SW].some(x=>weekKey(x)===wk)){type='work';swapped='toWork';}}}
   return {type,start,end,season:s,swapped};}
 function schedSpan(e,wk,date){const g=schedFor(e,wk,date);if(g.start&&g.end){const h=(timeToMin(g.end)-timeToMin(g.start))/60;if(h>0)return h;}return null;}
