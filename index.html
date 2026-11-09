@@ -321,7 +321,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
         <li><b>全勤獎金</b>（請假規則 §9、性平法 §21）：婚喪公假、家庭照顧假、生理假<b>不得</b>影響全勤；普通傷病假只能按日數比例扣發（<code>全勤 × 病假日數 ÷ 30</code>），或選擇不扣；一般事假可設定是否取消。</li>
         <li><b>颱風假</b>（天然災害發生事業單位勞工出勤管理及工資給付要點）：停止上班日未出勤不算缺勤、不扣全勤、不計遲到；工資預設不給薪（依勞資約定，應載明於勞動契約或工作規則；可改為照給）；照常出勤者可設定加給。相關金額列入審核。</li>
         <li><b>單日缺勤逾 1 小時</b>：遲到＋早退單日合計超過 60 分，或整天未打卡，匯入出勤後自動跳出「缺勤處理」，逐筆選擇事假、病假、特休等（依「請假單位」進位計時數）；選定後該日不再另計遲到早退。尚未選擇時薪資單無法確認。</li>
-        <li><b>特休透支</b>：員工請特休可超過本期剩餘（負時數）。年度終結當月的薪資單會出現「特休年度透支結算」，由你選擇<b>以隔年特休抵充</b>（隔年給假日數扣除透支）或<b>直接送給員工</b>（不抵充），選定後才能確認；離職時透支不自動扣回。</li>
+        <li><b>特休預支</b>：只有<b>整天</b>請特休可以預支（負時數）；不滿一天的特休與遲到早退抵扣只能用現有餘額，不足部分改以事假計（列入審核）。<b>離職當月</b>結算：未休發給工資，超休依約定自當月薪資扣回（列入審核）。年度終結當月的薪資單會出現「特休年度透支結算」，由你選擇<b>以隔年特休抵充</b>（隔年給假日數扣除透支）或<b>直接送給員工</b>（不抵充），選定後才能確認；離職時透支不自動扣回。</li>
         <li><b>特休 12 月結算</b>：曆年制（每年 1/1–12/31，施行細則 §24 第 2 項第 2 款）的未休特休在 12 月薪資自動結算並列入審核；週年制的年度終結在到職週年日，須於 30 日內發給（§24-1），無法統一於 12 月。新員工預設曆年制。</li>
         <li><b>特休抵扣遲到早退</b>：依 §38，特休期日由勞工排定，雇主不得片面以特休抵扣。選擇此方式時，系統計算應抵時數（可設定每次以 15／30／60 分為單位），並列為待審核項目，請確認員工已申請或同意；特休不足部分依設定扣薪或取消全勤。</li>
         <li><b>自訂薪資項目</b>：員工設定的「固定加減項」每月自動帶入；「本月加減項」記錄單月獎金或扣款。均列入薪資單、Excel 總表與薪資紀錄。</li>
@@ -445,7 +445,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
   <h2 class="vh">特休總覽</h2>
   <p class="vlead">以計薪月份月底（或離職日）為基準，依各員工的特休制度與「特休明細」累計已休。曆年制員工的未休特休於 <b>12 月薪資</b>結算（列入審核），依施行細則 §24-1 於次月發薪日發給。</p>
   <div id="leaveBanner"></div>
-  <label class="chk" style="margin:0 0 12px"><input type="checkbox" id="lateNeg"> 遲到早退以特休抵扣時，也允許透支（未勾選＝特休不足的部分取消全勤＋扣薪）</label>
+
   <div class="card pad">
     <div class="toolbar" style="margin-bottom:12px">
       <label style="font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px">曆年制小數處理
@@ -854,10 +854,10 @@ function dayAgg(e,r){
       else if(hrly){A.regH+=Math.min(h,8);if(h>8)A.ot.push({type:'weekday',hours:h-8,date:d.date});}
       return;}
     const h=fb(d);
-    if(LEAVE_ST.includes(st)){A.leaveH[st]+=h;if(st==='annual')A.annualItems.push({date:d.date,hours:h});}
+    if(LEAVE_ST.includes(st)){A.leaveH[st]+=h;if(st==='annual')A.annualItems.push({date:d.date,hours:h,full:true});}
     else if(st==='holiday')A.holidayH+=h;else if(st==='off')A.offH+=h;else if(st==='typhoon'){A.typhoonH+=h;A.typhoon++;}
     else if(st==='pending'){A.pendingH+=h;A.pending++;}else if(st==='absent'){A.absentH+=h;A.absent++;}});
-  Object.entries(r.absChoice||{}).forEach(([dt,x])=>{if(x&&LEAVE_ST.includes(x.type)&&x.hours>0){A.leaveH[x.type]+=x.hours;if(x.type==='annual')A.annualItems.push({date:dt,hours:x.hours});}});
+  Object.entries(r.absChoice||{}).forEach(([dt,x])=>{if(x&&LEAVE_ST.includes(x.type)&&x.hours>0){A.leaveH[x.type]+=x.hours;if(x.type==='annual')A.annualItems.push({date:dt,hours:x.hours,full:false});}});
   A.sched=sd.size;A.worked=wd.size;return A;}
 function monthLeave(e,r){const A=dayAgg(e,r),a=r.att;const k=x=>(+a[x]||0)+A.leaveH[x];
   return {sick:k('sick'),menstrual:k('menstrual'),personal:k('personal'),family:k('family'),paidLeave:k('paidLeave'),A};}
@@ -906,18 +906,18 @@ function lateRaw(e,r){const grace=(e.lateGrace!=null&&e.lateGrace!=='')?+e.lateG
   return {grace,detail,totalMin,needMin,over:totalMin>grace,count:detail.length};}
 // 依日期排序的特休使用紀錄（含期初、明細、遲到早退抵扣），只取 refX 之前
 function usageItems(e,refX){const items=[];
-  if(+e.priorUsed>0){const t=pd(e.priorAsOf);const tt=t!=null?t:pd(e.hire);if(tt!=null)items.push({t:tt,days:+e.priorUsed,kind:'prior'});}
+  if(+e.priorUsed>0){const t=pd(e.priorAsOf);const tt=t!=null?t:pd(e.hire);if(tt!=null)items.push({t:tt,days:+e.priorUsed,kind:'prior',full:true});}
   for(const ym of Object.keys(state.months).sort()){const r=peekRec(e.id,ym);if(!r)continue;const R=ymRange(ym);
-    r.annualEvents.concat(dayAgg(e,r).annualItems).forEach(ev=>{const t=pd(ev.date);items.push({t:t!=null?t:R.start,days:(+ev.hours||0)/HPD,kind:'annual',ym});});
+    r.annualEvents.map(ev=>Object.assign({},ev,{full:(+ev.hours||0)>=HPD})).concat(dayAgg(e,r).annualItems).forEach(ev=>{const t=pd(ev.date);items.push({t:t!=null?t:R.start,days:(+ev.hours||0)/HPD,kind:'annual',full:ev.full!==false,ym});});
     if((e.lateePolicy||'annualOffset')==='annualOffset'&&!(r.reviews&&r.reviews.lateOffset&&r.reviews.lateOffset.d==='no')){const L=lateRaw(e,r);if(L.over)items.push({t:R.end-DAY,days:L.needMin/60/HPD,kind:'late',ym});}}
   return items.filter(i=>i.t<refX).sort((a,b)=>a.t-b.t||((a.kind==='late')-(b.kind==='late')));}
 // 特休狀態：refX 為「基準日的隔天」（不含）
 // 特休年度透支（負時數）的年底決定：carry＝抵充隔年特休、waive＝送給員工（記在年度終結當月的審核 annualNeg）
 function negDecision(e,ym,days){const r=peekRec(e.id,ym),x=r&&r.reviews&&r.reviews.annualNeg;return x&&x.v==='n'+D2(days)?x.d:'';}
 function leaveStatus(e,refX){
-  const res={ok:false,cur:null,next:null,payouts:[],negatives:[],lateDecision:{},periods:[]};
+  const res={ok:false,cur:null,next:null,payouts:[],negatives:[],lateDecision:{},partialShort:{},periods:[]};
   if(pd(e.hire)==null)return res;res.ok=true;
-  const P=periodsFor(e,refX),items=usageItems(e,refX),lateNeg=!!state.settings.lateOffsetNegative;
+  const P=periodsFor(e,refX),items=usageItems(e,refX);
   const keys=Object.keys(state.months).sort();let trackStart=keys.length?ymRange(keys[0]).start:refX;
   const pa=pd(e.priorAsOf);if(+e.priorUsed>0&&pa!=null)trackStart=Math.min(trackStart,pa);
   let ii=0,carry=0;
@@ -926,8 +926,11 @@ function leaveStatus(e,refX){
     const tracked=p.end>trackStart,carryIn=tracked&&carry>0?carry:0,negIn=tracked&&carry<0?carry:0,ownDays=p.days+negIn;let uC=0,uO=0;
     while(ii<items.length&&items[ii].t<p.start)ii++;
     while(ii<items.length&&items[ii].t<p.end){const it=items[ii++];
-      let dd=it.days;if(it.kind==='late'){const avail=Math.max(0,carryIn-uC+ownDays-uO);if(!lateNeg)dd=Math.min(dd,avail);res.lateDecision[it.ym]=dd;if(dd<=1e-9)continue;}
-      const fc=Math.min(dd,Math.max(0,carryIn-uC));uC+=fc;uO+=dd-fc;}   // 遞延日數優先扣除；特休可透支（負數）
+      // 只有整天請假可以預支（透支）；不滿一天的特休與遲到抵扣只能用現有餘額
+      let dd=it.days;const avail=Math.max(0,carryIn-uC+ownDays-uO);
+      if(it.kind==='late'){dd=Math.min(dd,avail);res.lateDecision[it.ym]=dd;if(dd<=1e-9)continue;}
+      else if(it.kind==='annual'&&!it.full&&dd>avail+1e-9){res.partialShort[it.ym]=(res.partialShort[it.ym]||0)+(dd-avail);dd=avail;if(dd<=1e-9)continue;}
+      const fc=Math.min(dd,Math.max(0,carryIn-uC));uC+=fc;uO+=dd-fc;}   // 遞延日數優先扣除
     const info=Object.assign({},p,{carryIn,negIn,used:uC+uO,carryLeft:carryIn-uC,ownLeft:ownDays-uO,remaining:carryIn-uC+ownDays-uO,tracked});
     res.periods.push(info);
     if(refX<p.end){res.cur=info;}
@@ -966,7 +969,7 @@ function leaveBefore(e,ym){const y=ym.slice(0,4);let s=0,mn=0;
 
 /* ===== 計算核心 ===== */
 const EARN=['底薪','工時工資','假日/特休照給','病假/生理假半薪','颱風假照給','加班費','天災出勤加給','暑期津貼','全勤獎金','特休未休工資','其他獎金'];
-const DED=['勞保費','健保費','勞退自提','伙食代扣','病假扣薪','生理假扣薪','事假扣薪','曠職扣薪','颱風假扣薪','遲到/早退扣薪','其他代扣'];
+const DED=['勞保費','健保費','勞退自提','伙食代扣','病假扣薪','生理假扣薪','事假扣薪','曠職扣薪','颱風假扣薪','特休預支扣回','遲到/早退扣薪','其他代扣'];
 function compute(e,ym){ym=ym||curYM();const r=mrec(e.id,ym);
   if(r.confirmed&&r.snapshot)return Object.assign({},r.snapshot,{confirmed:true,locked:true});
   return computeLive(e,ym,r);}
@@ -978,8 +981,12 @@ function computeLive(e,ym,r){
   const rv=r.reviews||{},reviews=[];
   const decide=(key,label,detail,amt,sig,ack)=>{if(!amt&&!sig)return 'none';sig=sig||String(Math.round(amt));const x=rv[key];const st=x&&x.v===sig?x.d:'pending';
     reviews.push({key,label,detail,amt:Math.round(amt||0),sig,st,ack:!!ack});return st;};
-  const sickD=H(ML.sick),menD=H(ML.menstrual),perD=H(ML.personal),famD=H(ML.family),paidD=H(ML.paidLeave);
-  const annualH=r.annualEvents.reduce((s,x)=>s+(+x.hours||0),0)+A.leaveH.annual;
+  const sickD=H(ML.sick),menD=H(ML.menstrual),famD=H(ML.family),paidD=H(ML.paidLeave);
+  const annualH=r.annualEvents.reduce((s,x)=>s+(+x.hours||0),0)+A.leaveH.annual;  // 計時人員照給時另扣除改計事假的時數（見下）
+  // 不滿一天的特休超過餘額：不足部分改以事假計（審核）
+  let annualShortH=D2((LS.partialShort[ym]||0)*HPD);
+  if(annualShortH>0&&decide('annualShort','特休不足（非整天不可預支）改以事假計',`不滿一天的特休超過剩餘 ${annualShortH} 小時，改以事假計；不採用則該時數不扣薪（視為公司給假，不另扣特休）`,0,'s'+annualShortH)==='no')annualShortH=0;
+  const perD=H(ML.personal)+annualShortH/HPD;
   const prior=leaveBefore(e,ym),ratio=hrly?Math.min(1,Math.max(0,+e.ptRatio||1)):1,sickCap=30*ratio,menCap=3;
   const menOwn=Math.min(menD,Math.max(0,menCap-prior.men)),menEx=menD-menOwn;          // 生理假：每年 3 日不併入病假
   const sickPrior=prior.sick+Math.max(0,prior.men-menCap),sickAll=sickD+menEx;
@@ -987,7 +994,7 @@ function computeLive(e,ym,r){
   let sickDeduct=0,menDeduct=0,personalDeduct=0,absentDeduct=0,hourPay=0,paidHolPay=0,halfPay=0;
   if(hrly){
     hourPay=Math.round((A.regH+(+r.att.extraHours||0))*hr);
-    paidHolPay=Math.round((A.holidayH+A.offH+ML.paidLeave+annualH)*hr);           // 國定假日適逢排班日、公司給假、婚喪公假、特休：照給
+    paidHolPay=Math.round((A.holidayH+A.offH+ML.paidLeave+annualH-annualShortH)*hr);           // 國定假日適逢排班日、公司給假、婚喪公假、特休：照給
     const autoHol=Math.round((A.holidayH+A.offH)*hr);
     if(decide('holPay','國定假日／公司休假照給工資',`國定假日 ${D2(A.holidayH)}h、公司休假 ${D2(A.offH)}h × 時薪 ${N(hr)}`,autoHol)==='no')paidHolPay-=autoHol;
     halfPay=Math.round(0.5*dw*(sickHalf+menOwn));
@@ -1020,15 +1027,21 @@ function computeLive(e,ym,r){
   // 特休未休工資
   let payDays=0;const payNotes=[];
   LS.payouts.filter(p=>p.ym===ym).forEach(p=>{payDays+=p.days;payNotes.push(p.label+'期間年度終結未休 '+D2(p.days)+' 日');});
-  if(pr.leavesThisMonth&&LS.ok){const lv=pd(e.leave);const rem=LS.cur?LS.cur.remaining:0;let short=0;
+  let clawDays=0;
+  if(pr.leavesThisMonth&&LS.ok){const lv=pd(e.leave);let rem=LS.cur?LS.cur.remaining:0;let short=0;
+    LS.negatives.filter(n=>n.ym===ym).forEach(n=>{rem+=n.days;});   // 離職當月剛好年度終結的透支，一併結算
     if(e.leaveSystem==='cal'){const P=periodsFor(e,lv+DAY);const cumA=P.segs.filter(s=>s.start<=lv).reduce((s,x)=>s+x.days,0),cumC=P.list.filter(p=>p.start<=lv).reduce((s,x)=>s+x.days,0);short=Math.max(0,D2(cumA-cumC));}
-    if(rem<-1e-9)payNotes.push('離職時特休已透支 '+D2(-rem)+' 日（未自動扣回）');
-    const d=Math.max(0,rem)+short;if(d>1e-9){payDays+=d;payNotes.push('離職未休 '+D2(Math.max(0,rem))+' 日'+(short?'＋曆年制少於週年制差額 '+D2(short)+' 日':''));}}
-  const negNotes=[];LS.negatives.filter(n=>n.ym===ym).forEach(n=>{const sig='n'+n.days,x=rv.annualNeg,st=x&&x.v===sig?x.d:'pending';
+    const net=D2(rem+short);
+    if(net>1e-9){payDays+=net;payNotes.push('離職未休 '+D2(Math.max(0,rem))+' 日'+(short?'＋曆年制少於週年制差額 '+D2(short)+' 日':''));}
+    else if(net<-1e-9){clawDays=-net;}}
+  const negNotes=[];LS.negatives.filter(n=>n.ym===ym&&!pr.leavesThisMonth).forEach(n=>{const sig='n'+n.days,x=rv.annualNeg,st=x&&x.v===sig?x.d:'pending';
     reviews.push({key:'annualNeg',label:'特休年度透支結算',detail:`${n.label}期間透支 ${D2(-n.days)} 日（${D2(-n.days*HPD)} 時）：請選擇以隔年特休抵充，或直接送給員工`,amt:0,sig,st,
       opts:[['carry','抵充隔年特休'],['waive','送給員工']]});
     negNotes.push(`${n.label}期間透支 ${D2(-n.days)} 日：`+(st==='carry'?'以隔年特休抵充':st==='waive'?'送給員工（不抵充）':'待決定'));});
-  let annualPay=Math.round(payDays*dw);
+  let annualPay=Math.round(payDays*dw),annualClaw=0;
+  if(clawDays>0){const amt=Math.round(clawDays*dw);
+    if(decide('annualClawback','離職結算：預支特休扣回',`離職時特休超休 ${D2(clawDays)} 日（${D2(clawDays*HPD)} 時）× 日薪 ${N(dw)}，依約定自離職當月薪資扣回`,amt)!=='no'){annualClaw=amt;negNotes.push(`離職時超休 ${D2(clawDays)} 日，扣回 ${N(amt)}`);}
+    else negNotes.push(`離職時超休 ${D2(clawDays)} 日，審核不採用，未扣回`);}
   if(annualPay&&decide('annualPay','特休未休工資',payNotes.join('；')+`（日薪 ${N(dw)}）`,annualPay)==='no'){annualPay=0;payNotes.push('審核不採用，未發給');}
   // 勞健保、勞退
   const pw=(+e.pensionWage>0)?+e.pensionWage:(isNaN(+e.laborGrade)?0:+e.laborGrade);
@@ -1068,7 +1081,7 @@ function computeLive(e,ym,r){
   if(!hrly&&pr.employed&&!pr.partial&&(+e.base||0)>0&&wageBase(e)<MIN_MONTH)warns.push(`月工資 ${N(wageBase(e))} 低於 2026 基本工資 ${N(MIN_MONTH)} 元`);
   const P=a=>a.map(x=>[x.l,x.v]);
   let earnings=[['底薪',baseAmt],['工時工資',hourPay],['假日/特休照給',paidHolPay],['病假/生理假半薪',halfPay],['颱風假照給',typhoonPaid],['加班費',otPay],['天災出勤加給',typhoonExtra],['暑期津貼',summerAmt],...P(fixAdd),['全勤獎金',perfect],['特休未休工資',annualPay],['其他獎金',+r.otherBonus||0],...P(mAdd)];
-  let deducts=[['勞保費',labor],['健保費',health],['勞退自提',pensionSelf],['伙食代扣',pr.employed?(+e.meal||0):0],...P(fixDed),['病假扣薪',sickDeduct],['生理假扣薪',menDeduct],['事假扣薪',personalDeduct],['曠職扣薪',absentDeduct],['颱風假扣薪',typhoonDeduct],['遲到/早退扣薪',lateDeduct],['其他代扣',+r.otherDeduct||0],...P(mDed)];
+  let deducts=[['勞保費',labor],['健保費',health],['勞退自提',pensionSelf],['伙食代扣',pr.employed?(+e.meal||0):0],...P(fixDed),['病假扣薪',sickDeduct],['生理假扣薪',menDeduct],['事假扣薪',personalDeduct],['曠職扣薪',absentDeduct],['颱風假扣薪',typhoonDeduct],['特休預支扣回',annualClaw],['遲到/早退扣薪',lateDeduct],['其他代扣',+r.otherDeduct||0],...P(mDed)];
   const customE=[...fixAdd,...mAdd].map(x=>x.l),customD=[...fixDed,...mDed].map(x=>x.l);
   const ov=r.overrides||{},ovList=[];
   const ap=arr=>arr.map(([l,v])=>{if(ov[l]!=null&&ov[l]!==''){ovList.push(l);return [l,+ov[l]];}return [l,v];});
@@ -1999,7 +2012,7 @@ function exportWord(){
   dl(new Blob([html],{type:'application/msword'}),'百宏薪資單_'+pTag()+'.doc');toast('已匯出 Word 薪資單');}
 
 /* boot */
-function bootUI(){$('lateNeg').checked=!!state.settings.lateOffsetNegative;$('hhOff').checked=state.settings.hourlyHolidayOff!==false;$('typhoonList').value=state.settings.typhoonDates||'';$('tyPay').value=state.settings.typhoonPay||'unpaid';$('tyExtra').value=String(state.settings.typhoonExtra||'0');$('absUnit').value=String(state.settings.absUnit??30);$('prorateBase').value=state.settings.prorateBase;$('calRound').value=state.settings.calRound;$('holidayList').value=state.settings.holidays||'';
+function bootUI(){$('hhOff').checked=state.settings.hourlyHolidayOff!==false;$('typhoonList').value=state.settings.typhoonDates||'';$('tyPay').value=state.settings.typhoonPay||'unpaid';$('tyExtra').value=String(state.settings.typhoonExtra||'0');$('absUnit').value=String(state.settings.absUnit??30);$('prorateBase').value=state.settings.prorateBase;$('calRound').value=state.settings.calRound;$('holidayList').value=state.settings.holidays||'';
   ['summerStart','summerEnd','winterStart','winterEnd'].forEach(k=>$('ss_'+k).value=(state.settings.seasons||{})[k]||'');renderActive();resetIdle();
   $('secBtn').textContent=sec.key?'🔒 密碼保護：已啟用':'🔓 密碼保護：未啟用';}
 $('holidayList').addEventListener('change',()=>{state.settings.holidays=$('holidayList').value;addLog('修改國定假日清單','');save();renderActive();toast('已更新假日清單');});
@@ -2021,7 +2034,6 @@ $('typhoonList').addEventListener('change',()=>{state.settings.typhoonDates=$('t
 $('tyPay').addEventListener('change',()=>{state.settings.typhoonPay=$('tyPay').value;addLog('修改颱風假工資',$('tyPay').value);save();renderActive();});
 $('tyExtra').addEventListener('change',()=>{state.settings.typhoonExtra=$('tyExtra').value;addLog('修改天災出勤加給',$('tyExtra').value);save();renderActive();});
 $('hhOff').addEventListener('change',()=>{state.settings.hourlyHolidayOff=$('hhOff').checked;addLog('修改計時人員國定假日',$('hhOff').checked?'不排班（依勞動契約）':'照排班，國定假日照給');save();renderActive();});
-$('lateNeg').addEventListener('change',()=>{state.settings.lateOffsetNegative=$('lateNeg').checked;addLog('修改遲到抵扣透支',$('lateNeg').checked?'允許':'不允許');save();renderActive();});
 cloudInit();
 </script>
 </body>
