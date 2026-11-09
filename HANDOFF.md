@@ -67,7 +67,8 @@ Repo 只有三個檔案：`index.html`（系統本體）、`README.md`、`HANDOF
 ```js
 state = {
   version: 3,
-  settings: { typhoonDates:'YYYY-MM-DD 說明\n…', typhoonPay:'unpaid'|'paid'（預設不給薪）, typhoonExtra:'0'|'0.5'|'1', absUnit:0|30|60, leaveDefault:'cal', prorateBase:'cal'|'30', calRound, holidays:'YYYY-MM-DD 名稱\n…',
+  settings: { hourlyHolidayOff:true,  // 依勞動契約：計時人員國定假日不排班、不給薪
+              typhoonDates:'YYYY-MM-DD 說明\n…', typhoonPay:'unpaid'|'paid'（預設不給薪）, typhoonExtra:'0'|'0.5'|'1', absUnit:0|30|60, leaveDefault:'cal', prorateBase:'cal'|'30', calRound, holidays:'YYYY-MM-DD 名稱\n…',
               seasons:{summerStart,summerEnd,winterStart,winterEnd} },
   employees: [{ id, name, role, empNo, payType:'monthly'|'hourly', base, rate, ptRatio,
     hourBasis:'punch'|'sched', hourRound, brkMin, brkAfter, summer, perfect, otFixed,
@@ -152,6 +153,7 @@ match /{document=**} { allow read, write: if false; }
 3. 人工審核、薪資紀錄、異動紀錄、密碼加密
 4. 每週七天彈性排班、計時工時輸入、特休抵扣遲到、自訂薪資項目（並修正計時員工表單未切換的 bug）
 5. 雲端同步（Firebase，端對端加密）
+14. 計時人員國定假日不排班（依勞動契約，`settings.hourlyHolidayOff`，計算時於 `dayAgg` 排除，可隨時切換；出勤仍依 §39 加倍）
 13. 計時人員薪資單列出時數：各項目「時數 × 時薪」（`hourDetail`）、出勤摘要「計時工時」（`hoursTotal`），Word 同步
 12. 休息日調移（10/9 休息日、10/10 國慶日放假，依勞動契約）
 11. 薪資單「出勤摘要」：出勤、缺勤狀況、事假、病假、特休（本月，含遲到抵扣）、特休剩餘（`attSum`／`attPlain`，Word 與 Excel 同步）

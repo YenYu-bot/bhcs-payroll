@@ -312,7 +312,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
       本系統依《勞動基準法》常見標準與主管機關公告之級距計算，實際仍請以貴機構內規與最新公告為準；本工具僅供試算，非法律或會計意見。
       <ul>
         <li><b>勞健保級距</b>：內建 <b>2026 年（民國115年）</b>官方級距與自付金額。勞保表含就業保險、勞工負擔 20%（資料源：勞保局）；健保費率 5.17%、勞工負擔 30%、眷屬最多計 3 人（資料源：健保署）。</li>
-        <li><b>計時人員</b>：工時工資 ＝ 計薪工時 × 時薪（每日 8 小時內）；超過 8 小時、休息日、國定假日出勤依 §24、§39 以時薪計加班費。國定假日適逢排班日、公司給假、婚喪公假、特休照給工資；病假、生理假半薪。特休日數與有薪病假上限依「部分工時比例」計給（僱用部分時間工作勞工應行注意事項）。時薪不得低於 196 元。</li>
+        <li><b>計時人員</b>：工時工資 ＝ 計薪工時 × 時薪（每日 8 小時內）；超過 8 小時、休息日、國定假日出勤依 §24、§39 以時薪計加班費。公司給假、婚喪公假、特休照給工資；國定假日依「計時人員國定假日不排班」設定（預設已約定不排班、不給薪，出勤仍加倍）；病假、生理假半薪。特休日數與有薪病假上限依「部分工時比例」計給（僱用部分時間工作勞工應行注意事項）。時薪不得低於 196 元。</li>
         <li><b>應出勤日</b>：打卡機匯出檔每位員工列出的日期即排班日。未打卡日：國定假日自動標「國定假日」，其餘標「待確認」；漏打卡（只有一次打卡）不計遲到早退，請補登工時。<b>缺勤時數</b> ＝ 待確認 ＋ 曠職 ＋ 遲到早退。曠職扣當日工資並取消全勤。</li>
         <li><b>定額加班費</b>：每月發給約定金額；依法計算（§24）較高時自動補足差額。休息日工作時數計入每月 46 小時延長工時上限（§36），超過會提示。</li>
         <li><b>工資基礎</b> ＝ 底薪 ＋ 勾選「計入工資」的固定項目（預設全勤獎金、暑期津貼）。<b>時薪</b> ＝ 工資基礎 ÷ 240；<b>日薪</b> ＝ 工資基礎 ÷ 30。加班費、請假扣薪、特休未休工資皆以此計算。</li>
@@ -365,6 +365,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
     <summary>國定假日清單（判定國定假日出勤、未打卡日自動標為假日）</summary>
     <div class="rc">每行一天，格式 <code>YYYY-MM-DD 名稱</code>。預設為人事總處 2026 年行事曆（含補假日）。<br>
       <b>休息日調移</b>：名稱寫「休息日調移」（例：<code>2026-10-09 休息日調移</code>），該日對所有員工改為休息日（出勤依 §24 計休息日加班費），<b>同一週原本的休息日改為工作日</b>；若原休息日剛好是國定假日，即於當天放假、工資照給，不再另行補假。調移須事先與員工約定（勞動契約或書面同意）。個別員工例外可於出勤日曆逐日調整。
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="hhOff"> 計時人員國定假日不排班（依勞動契約約定：國定假日無出勤義務、不給薪；如有出勤仍依 §39 加倍發給）</label>
       <textarea id="holidayList" rows="10" style="width:100%;margin-top:8px;font-family:var(--mono);font-size:12.5px;padding:8px;border:1px solid var(--line-strong);border-radius:8px"></textarea></div>
   </details>
   <details class="rules" style="margin-top:12px">
@@ -719,7 +720,7 @@ const HOLIDAYS_2026=`2026-01-01 元旦
 2026-10-26 光復節補假
 2026-12-25 行憲紀念日`;
 const MIN_MONTH=29500,MIN_HOUR=196;
-const DEF_SETTINGS=()=>({typhoonDates:'',typhoonPay:'unpaid',typhoonExtra:'0',absUnit:30,leaveDefault:'cal',prorateBase:'cal',calRound:'none',holidays:HOLIDAYS_2026,seasons:{summerStart:'',summerEnd:'',winterStart:'',winterEnd:''}});
+const DEF_SETTINGS=()=>({hourlyHolidayOff:true,typhoonDates:'',typhoonPay:'unpaid',typhoonExtra:'0',absUnit:30,leaveDefault:'cal',prorateBase:'cal',calRound:'none',holidays:HOLIDAYS_2026,seasons:{summerStart:'',summerEnd:'',winterStart:'',winterEnd:''}});
 let state={version:3,settings:DEF_SETTINGS(),employees:[],months:{}};
 let migrated=false;
 
@@ -840,7 +841,8 @@ function dayAgg(e,r){
   const avg={};days.forEach(d=>{if((d.status||'work')==='work'){const g=wkGroup(d.wk);(avg[g]=avg[g]||[]).push(workedH(e,d));}});
   const fb=d=>{if(d.hours!=null&&d.hours!=='')return +d.hours;if(!hrly)return HPD;const s=schedSpan(e,d.wk,d.date);if(s!=null)return s;const a=avg[wkGroup(d.wk)];return a&&a.length?a.reduce((x,y)=>x+y,0)/a.length:0;};
   const sd=new Set(),wd=new Set();
-  days.forEach(d=>{const st=d.status||'work';if(st==='notScheduled')return;sd.add(d.date);
+  const hhOff=hrly&&state.settings.hourlyHolidayOff!==false;
+  days.forEach(d=>{const st=d.status||'work';if(st==='notScheduled'||(hhOff&&st==='holiday'))return;sd.add(d.date);
     if(st==='work'||st==='missing'){const h=workedH(e,d);wd.add(d.date);A.workH+=h;if(st==='missing'&&(d.hours==null||d.hours===''))A.missing++;
       const k=d.kind||'work';
       if(k==='rest')A.ot.push({type:'rest',hours:h,date:d.date});
@@ -1405,7 +1407,7 @@ function renderDay(){
   const autoH=d=>{const st=d.status||'work';if(st==='work'||st==='missing')return D2(workedH(e,Object.assign({},d,{hours:null})));if(st==='notScheduled')return '';const s=schedSpan(e,d.wk,d.date);return hrly?(s!=null?D2(s):'均'):HPD;};
   const color={pending:'var(--neg)',missing:'var(--neg)',absent:'var(--neg)',holiday:'var(--gold)',off:'var(--gold)'};
   const rows=arr.map((d,i)=>{const st=d.status||'work',hn=hol.has(d.date)?holidayName(d.date):'';
-    return `<tr style="${st==='notScheduled'?'opacity:.5':''}"><td style="white-space:nowrap">${esc((d.date||'').slice(5))}（${esc(d.wk||wkOf(d.date))}）${hn?`<br><span style="font-size:11px;color:var(--gold)">${esc(hn)}</span>`:''}${(()=>{const sw=schedFor(e,d.wk||wkOf(d.date),d.date).swapped;return sw?`<br><span style="font-size:11px;color:var(--accent)">${sw==='toRest'?'休息日調移至本日':'原休息日改為工作日'}</span>`:'';})()}</td>
+    return `<tr style="${st==='notScheduled'?'opacity:.5':''}"><td style="white-space:nowrap">${esc((d.date||'').slice(5))}（${esc(d.wk||wkOf(d.date))}）${hn?`<br><span style="font-size:11px;color:var(--gold)">${esc(hn)}</span>`:''}${st==='holiday'&&hrly&&state.settings.hourlyHolidayOff!==false?'<br><span style="font-size:11px;color:var(--muted)">依約定不排班、不計薪</span>':''}${(()=>{const sw=schedFor(e,d.wk||wkOf(d.date),d.date).swapped;return sw?`<br><span style="font-size:11px;color:var(--accent)">${sw==='toRest'?'休息日調移至本日':'原休息日改為工作日'}</span>`:'';})()}</td>
       <td style="white-space:nowrap"><input type="time" class="tm" value="${esc(d.in||'')}"${dis} onchange="editDet(${i},'in',this.value)">–<input type="time" class="tm" value="${esc(d.out||'')}"${dis} onchange="editDet(${i},'out',this.value)">
         ${lock?'':`<button class="btn ghost tiny" title="帶入排班時間" onclick="fillSched(${i})">⟲</button>`}<br><span style="font-size:11px;color:var(--muted)">${d.punches?(d.manual?'手動 ':'打卡 ')+D2((+d.wh||0)/60)+'h':'無打卡'}</span></td>
       <td><select${dis} onchange="editDet(${i},'kind',this.value)">${opt(DKIND,d.kind||'work')}</select></td>
@@ -1982,7 +1984,7 @@ function exportWord(){
   dl(new Blob([html],{type:'application/msword'}),'百宏薪資單_'+pTag()+'.doc');toast('已匯出 Word 薪資單');}
 
 /* boot */
-function bootUI(){$('typhoonList').value=state.settings.typhoonDates||'';$('tyPay').value=state.settings.typhoonPay||'unpaid';$('tyExtra').value=String(state.settings.typhoonExtra||'0');$('absUnit').value=String(state.settings.absUnit??30);$('prorateBase').value=state.settings.prorateBase;$('calRound').value=state.settings.calRound;$('holidayList').value=state.settings.holidays||'';
+function bootUI(){$('hhOff').checked=state.settings.hourlyHolidayOff!==false;$('typhoonList').value=state.settings.typhoonDates||'';$('tyPay').value=state.settings.typhoonPay||'unpaid';$('tyExtra').value=String(state.settings.typhoonExtra||'0');$('absUnit').value=String(state.settings.absUnit??30);$('prorateBase').value=state.settings.prorateBase;$('calRound').value=state.settings.calRound;$('holidayList').value=state.settings.holidays||'';
   ['summerStart','summerEnd','winterStart','winterEnd'].forEach(k=>$('ss_'+k).value=(state.settings.seasons||{})[k]||'');renderActive();resetIdle();
   $('secBtn').textContent=sec.key?'🔒 密碼保護：已啟用':'🔓 密碼保護：未啟用';}
 $('holidayList').addEventListener('change',()=>{state.settings.holidays=$('holidayList').value;addLog('修改國定假日清單','');save();renderActive();toast('已更新假日清單');});
@@ -2003,6 +2005,7 @@ $('absUnit').value=String(state.settings.absUnit??30);
 $('typhoonList').addEventListener('change',()=>{state.settings.typhoonDates=$('typhoonList').value;addLog('修改停止上班日','');save();renderActive();toast('已更新停止上班日');});
 $('tyPay').addEventListener('change',()=>{state.settings.typhoonPay=$('tyPay').value;addLog('修改颱風假工資',$('tyPay').value);save();renderActive();});
 $('tyExtra').addEventListener('change',()=>{state.settings.typhoonExtra=$('tyExtra').value;addLog('修改天災出勤加給',$('tyExtra').value);save();renderActive();});
+$('hhOff').addEventListener('change',()=>{state.settings.hourlyHolidayOff=$('hhOff').checked;addLog('修改計時人員國定假日',$('hhOff').checked?'不排班（依勞動契約）':'照排班，國定假日照給');save();renderActive();});
 cloudInit();
 </script>
 </body>
