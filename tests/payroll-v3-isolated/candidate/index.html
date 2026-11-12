@@ -239,6 +239,8 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
   .view{display:none!important}
   .view#v-slip{display:block!important}
   .slips{gap:0}
+  .slip.settlement-blocked>*{display:none!important}
+  .slip.settlement-blocked::before{content:"本薪資單尚缺原年度特休工資依據，未完成核算，不可付款或作正式薪資單。";display:block;font-size:20px;color:#c0392b;padding:32px}
   .slip{page-break-after:always;box-shadow:none;border:1px solid #888;border-radius:0}
   .slip-top{background:#16232e!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .col.ded .li .v,.slip-foot .net{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -488,7 +490,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
     <div class="spacer"></div>
     <button class="btn ghost sm" onclick="exportExcel()">⬇ 匯出 Excel 總表</button>
     <button class="btn ghost sm" onclick="exportWord()">⬇ 匯出 Word 薪資單</button>
-    <button class="btn ghost sm" onclick="window.print()">🖨 列印 / 存 PDF</button>
+    <button class="btn ghost sm" onclick="printPayroll()">🖨 列印 / 存 PDF</button>
     <button class="btn primary sm" onclick="renderSlips()">重新產生</button>
   </div>
   <div class="stat-row no-print" id="statRow"></div>
@@ -869,6 +871,9 @@ function schedFor(e,wk,date){const i=WK.indexOf(wk),g=schedDay(e.sched,i<0?1:i),
     else if(type==='rest'){const wk=weekKey(date);if([...SW].some(x=>weekKey(x)===wk)){type='work';swapped='toWork';}}}
   return {type,start,end,season:s,swapped};}
 function schedSpan(e,wk,date){const g=schedFor(e,wk,date);if(g.start&&g.end){const h=(timeToMin(g.end)-timeToMin(g.start))/60;if(h>0)return h;}return null;}
+// 整日預支按當日正常班別，不以輸入來源或固定八小時猜測。
+function annualShiftHours(e,date){if(pd(date)==null)return null;const g=schedFor(e,wkOf(date),date),span=schedSpan(e,wkOf(date),date);if(g.type!=='work'||span==null)return null;let m=span*60;if(+e.brkMin>0&&m>=(+e.brkAfter||0)*60)m=Math.max(0,m-(+e.brkMin));return m>0?Math.min(HPD,m/60):null;}
+function annualIsFull(e,date,hours){const h=annualShiftHours(e,date);return h!=null&&(+hours||0)>=h-1e-9;}
 function workedH(e,d){if(d.hours!=null&&d.hours!=='')return +d.hours;
   if(e.hourBasis==='sched'&&(d.punches||0)>=2){const s=schedSpan(e,d.wk,d.date);if(s!=null)return s;}
   const step=+e.hourRound||0;let m=+d.wh||0;if(+e.brkMin>0&&m>=(+e.brkAfter||0)*60)m=Math.max(0,m-(+e.brkMin));return (step>0?Math.floor(m/step)*step:m)/60;}
@@ -888,11 +893,11 @@ function dayAgg(e,r){
       else if(k==='typhoonWork'){A.typhoonWorkH+=h;if(hrly)A.regH+=Math.min(h,8);if(h>8)A.ot.push({type:'weekday',hours:h-8,date:d.date});}
       else{if(hrly)A.regH+=Math.min(h,8);if(h>8)A.ot.push({type:'weekday',hours:h-8,date:d.date});}
       return;}
-    const h=fb(d);
-    if(LEAVE_ST.includes(st)){A.leaveH[st]+=h;if(st==='annual')A.annualItems.push({date:d.date,hours:h,full:true});}
+    const shift=st==='annual'?annualShiftHours(e,d.date):null;const h=st==='annual'&&(d.hours==null||d.hours==='')&&shift!=null?shift:fb(d);
+    if(LEAVE_ST.includes(st)){A.leaveH[st]+=h;if(st==='annual')A.annualItems.push({date:d.date,hours:h,source:'calendar',full:annualIsFull(e,d.date,h)});}
     else if(st==='holiday')A.holidayH+=h;else if(st==='off')A.offH+=h;else if(st==='typhoon'){A.typhoonH+=h;A.typhoon++;}
     else if(st==='pending'){A.pendingH+=h;A.pending++;}else if(st==='absent'){A.absentH+=h;A.absent++;}});
-  Object.entries(r.absChoice||{}).forEach(([dt,x])=>{if(x&&LEAVE_ST.includes(x.type)&&x.hours>0){A.leaveH[x.type]+=x.hours;if(x.type==='annual')A.annualItems.push({date:dt,hours:x.hours,full:false});}});
+  Object.entries(r.absChoice||{}).forEach(([dt,x])=>{if(x&&LEAVE_ST.includes(x.type)&&x.hours>0){A.leaveH[x.type]+=x.hours;if(x.type==='annual')A.annualItems.push({date:dt,hours:x.hours,source:'absence',full:annualIsFull(e,dt,x.hours)});}});
   A.sched=sd.size;A.worked=wd.size;return A;}
 function monthLeave(e,r){const A=dayAgg(e,r),a=r.att;const k=x=>(+a[x]||0)+A.leaveH[x];
   return {sick:k('sick'),menstrual:k('menstrual'),personal:k('personal'),family:k('family'),paidLeave:k('paidLeave'),A};}
@@ -928,6 +933,26 @@ function employment(e,ym){const R=ymRange(ym),last=R.end-DAY,h=pd(e.hire),l=pd(e
     healthFull:!(l!=null&&l<last),                      // 健保：月底在保收全月
     leavesThisMonth:l!=null&&l>=R.start&&l<=last};}
 
+/* 原年度遞延工資依據：舊快照只供建議，不自動信任或改寫。 */
+function leaveBasisKey(o){return o?String(o.start)+':'+String(o.end):'';}
+function resolveLeaveBasis(e,o){if(!o)return {ok:false,reason:'遞延來源期間不明'};
+ const b=(e.leaveWageBases||{})[leaveBasisKey(o)];if(!b||b.employeeId!==e.id||b.start!==o.start||b.end!==o.end||b.hire!==e.hire||b.system!==(e.leaveSystem||'anniv')||b.verified!==true||!Number.isFinite(b.dayWage)||b.dayWage<=0||typeof b.note!=='string'||!b.note.trim()||!Number.isInteger(b.revision)||b.revision<1||typeof b.checkedAt!=='string'||!Number.isFinite(Date.parse(b.checkedAt)))return {ok:false,reason:'原期 '+fd(o.start)+'～'+fd(o.end-DAY)+' 缺少有效人工核對基準'};
+ if(b.carriedDays!==o.days)return {ok:false,reason:'原年度遞延起始餘額已變更，須重核基準'};
+ if(b.snapshotFingerprint){const r=peekRec(e.id,b.snapshotYM);if(!r||!r.confirmed||!r.snapshot||hashStr(JSON.stringify(r.snapshot))!==b.snapshotFingerprint)return {ok:false,reason:'參考的歷史快照已變更或取消確認，須重新核對'};}
+ return {ok:true,dayWage:b.dayWage,revision:b.revision,source:b.note,checkedAt:b.checkedAt};}
+function recordLeaveBasis(e,o,dayWage,note,useSnapshot){if(!o||!Number.isFinite(dayWage)||dayWage<=0||!String(note||'').trim())throw Error('請填有效日薪與原年度資料來源說明');
+ const key=leaveBasisKey(o),previous=(e.leaveWageBases||{})[key],ym=ymOf(o.end-DAY),r=peekRec(e.id,ym);if(useSnapshot&&(!r||!r.confirmed||!r.snapshot))throw Error('參考月份沒有已確認快照');
+ const next={employeeId:e.id,start:o.start,end:o.end,hire:e.hire,system:e.leaveSystem||'anniv',carriedDays:o.days,yearEnd:e.yearEnd||'pay',dayWage,note:String(note).trim(),verified:true,checkedAt:new Date().toISOString(),revision:(previous?.revision||0)+1,snapshotYM:useSnapshot?ym:'',snapshotFingerprint:useSnapshot?hashStr(JSON.stringify(r.snapshot)):'',history:previous?[...(previous.history||[]),Object.fromEntries(Object.entries(previous).filter(([k])=>k!=='history'))]:[]};
+ e.leaveWageBases=Object.assign({},e.leaveWageBases,{[key]:next});return next;}
+function editLeaveBasis(eid,start,end){const e=emp(eid),c=computeLive(e,curYM(),mrec(eid));if(mrec(eid).confirmed)return;const part=c.deferredDetails.find(x=>x.origin&&x.origin.start===start&&x.origin.end===end);if(!part){toast('來源已改變，請重開核對');return;}const o=part.origin,r=peekRec(eid,ymOf(end-DAY)),candidate=r&&r.confirmed&&r.snapshot?r.snapshot.dw:null;
+ const raw=prompt('原期 '+fd(start)+'～'+fd(end-DAY)+'：請核對原年度正常工資後填入日薪。'+(Number.isFinite(candidate)?' 歷史快照建議 '+candidate+'（未證實為適用基準）。':''),'');if(raw==null)return;if(!raw.trim()||!Number.isFinite(Number(raw))||Number(raw)<=0){toast('日薪格式不正確');return;}
+ const note=prompt('請填原年度薪資單／正常工資核對依據（不能只填目前薪資）。','');if(note==null||!note.trim())return;
+ if(!confirm('已核對原期 '+fd(start)+'～'+fd(end-DAY)+' 正常日薪 '+raw+' 元、遞延起始餘額 '+o.days+' 日，並確認資料來源：'+note+'？'))return;
+ try{recordLeaveBasis(e,o,Number(raw),note,false);addLog('核對遞延特休原年度工資',fd(start)+'～'+fd(end-DAY)+' 日薪 '+raw+'；'+note,curYM(),eid);save();renderSlips();}catch(err){toast(err.message);}}
+function deferredBasisBlock(e,c){if(!c.deferredDetails?.length||c.locked)return '';return '<div class="note" style="border-color:#c0392b"><b>遞延特休原年度工資'+(c.settlementBlocked?'：待補資料，以下僅未完成草稿，不可付款':'：已填基準，仍須審核本次結算')+'</b>'+c.deferredDetails.map(x=>'<p>'+esc(x.basis.ok?x.basis.source:x.basis.reason)+(x.origin?' <button class="btn ghost tiny" onclick="editLeaveBasis('+esc(JSON.stringify(e.id))+','+x.origin.start+','+x.origin.end+')">核對／更正原年度基準</button>':'')+'</p>').join('')+'</div>';}
+function payrollReadyForOutput(){if(state.employees.some(e=>compute(e).settlementBlocked)){toast('遞延特休缺原年度基準，請完成核對後再匯出或列印');return false;}return true;}
+function printPayroll(){if(payrollReadyForOutput())window.print();}
+
 /* ===== 特休 ===== */
 function annualEnt(k){if(k===1)return 7;if(k===2)return 10;if(k<=4)return 14;if(k<=9)return 15;return Math.min(30,15+(k-9));}
 function annivSegs(hire,maxY){const s=[{label:'滿 6 個月',start:addM(hire,6),end:addM(hire,12),days:3}];
@@ -941,7 +966,7 @@ function periodsFor(e,upto){const h=pd(e.hire);if(h==null)return {list:[],segs:[
   const segs=annivSegs(h,Math.max(2,y1-y0+2));
   const ratio=isHourly(e)?Math.min(1,Math.max(0,+e.ptRatio||1)):1;if(ratio!==1)segs.forEach(s=>s.days=D2(s.days*ratio));
   if(e.leaveSystem==='cal'){const list=[];for(let y=y0;y<=y1+1;y++)list.push({label:y+' 年',start:Date.UTC(y,0,1),end:Date.UTC(y+1,0,1),days:roundCal(calGrant(segs,y))});return {list,segs};}
-  return {list:segs.map(s=>Object.assign({},s)),segs};}
+  return {list:[{label:'未滿 6 個月',start:h,end:addM(h,6),days:0,preGrant:true},...segs.map(s=>Object.assign({},s))],segs};}
 function lateRaw(e,r){const grace=(e.lateGrace!=null&&e.lateGrace!=='')?+e.lateGrace:15;
   const AC=r.absChoice||{},TY=typhoonSet();
   const detail=r.lateEvents.filter(ev=>!(AC[ev.date]&&AC[ev.date].type!=='late')&&!TY.has(ev.date)).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(ev=>({date:ev.date,late:+ev.late||0,early:+ev.early||0,m:(+ev.late||0)+(+ev.early||0)}));
@@ -951,8 +976,10 @@ function lateRaw(e,r){const grace=(e.lateGrace!=null&&e.lateGrace!=='')?+e.lateG
 function usageItems(e,refX){const items=[];
   if(+e.priorUsed>0){const t=pd(e.priorAsOf);const tt=t!=null?t:pd(e.hire);if(tt!=null)items.push({t:tt,days:+e.priorUsed,kind:'prior',full:true});}
   for(const ym of Object.keys(state.months).sort()){const r=peekRec(e.id,ym);if(!r)continue;const R=ymRange(ym);
-    r.annualEvents.map(ev=>Object.assign({},ev,{full:(+ev.hours||0)>=HPD})).concat(dayAgg(e,r).annualItems).forEach(ev=>{const t=pd(ev.date);items.push({t:t!=null?t:R.start,days:(+ev.hours||0)/HPD,kind:'annual',full:ev.full!==false,ym});});
-    if(!isHourly(e)&&(e.lateePolicy||'annualOffset')==='annualOffset'&&!(r.reviews&&r.reviews.lateOffset&&r.reviews.lateOffset.d==='no')){const L=lateRaw(e,r);if(L.over)items.push({t:R.end-DAY,days:L.needMin/60/HPD,kind:'late',ym});}}
+    // 同日可分筆請假；整班判斷看同日合計，但不自動刪除疑似重複紀錄。
+    const annualByDate=new Map();r.annualEvents.concat(dayAgg(e,r).annualItems).forEach((ev,i)=>{const t=pd(ev.date),key=t!=null?'d'+t:'undated'+i;const old=annualByDate.get(key);if(old)old.hours+=(+ev.hours||0);else annualByDate.set(key,{date:ev.date,t:t!=null?t:R.start,hours:+ev.hours||0});});
+    for(const ev of annualByDate.values())items.push({t:ev.t,days:ev.hours/HPD,kind:'annual',full:annualIsFull(e,ev.date,ev.hours),ym});
+    if(!isHourly(e)&&(e.lateePolicy||'annualOffset')==='annualOffset'&&!(r.reviews&&r.reviews.lateOffset&&r.reviews.lateOffset.d==='no')){const L=lateRaw(e,r);if(L.over){const unit=+e.lateUnit||0;for(const ev of L.detail){const date=pd(ev.date),minutes=unit>0?Math.ceil(ev.m/unit)*unit:ev.m;if(date==null&&R.start>=refX)continue;items.push({t:date!=null?date:Math.min(R.end,refX)-DAY,days:minutes/60/HPD,kind:'late',ym});}}}}
   return items.filter(i=>i.t<refX).sort((a,b)=>a.t-b.t||((a.kind==='late')-(b.kind==='late')));}
 // 特休狀態：refX 為「基準日的隔天」（不含）
 // 特休年度透支（負時數）的年底決定：carry＝抵充隔年特休、waive＝送給員工（記在年度終結當月的審核 annualNeg）
@@ -963,7 +990,7 @@ function leaveStatus(e,refX){
   const P=periodsFor(e,refX),items=usageItems(e,refX);
   const keys=Object.keys(state.months).sort();let trackStart=keys.length?ymRange(keys[0]).start:refX;
   const pa=pd(e.priorAsOf);if(+e.priorUsed>0&&pa!=null)trackStart=Math.min(trackStart,pa);
-  let ii=0,carry=0;
+  let ii=0,carry=0,carryOrigin=null;
   for(const p of P.list){
     if(p.start>=refX){res.next=p;break;}
     const tracked=p.end>trackStart,carryIn=tracked&&carry>0?carry:0,negIn=tracked&&carry<0?carry:0,ownDays=p.days+negIn;let uC=0,uO=0;
@@ -971,17 +998,19 @@ function leaveStatus(e,refX){
     while(ii<items.length&&items[ii].t<p.end){const it=items[ii++];
       // 只有整天請假可以預支（透支）；不滿一天的特休與遲到抵扣只能用現有餘額
       let dd=it.days;const avail=Math.max(0,carryIn-uC+ownDays-uO);
-      if(it.kind==='late'){dd=Math.min(dd,avail);res.lateDecision[it.ym]=dd;if(dd<=1e-9)continue;}
+      if(it.kind==='late'){dd=Math.min(dd,avail);res.lateDecision[it.ym]=(res.lateDecision[it.ym]||0)+dd;if(dd<=1e-9)continue;}
       else if(it.kind==='annual'&&!it.full&&dd>avail+1e-9){res.partialShort[it.ym]=(res.partialShort[it.ym]||0)+(dd-avail);dd=avail;if(dd<=1e-9)continue;}
       const fc=Math.min(dd,Math.max(0,carryIn-uC));uC+=fc;uO+=dd-fc;}   // 遞延日數優先扣除
-    const info=Object.assign({},p,{carryIn,negIn,used:uC+uO,carryLeft:carryIn-uC,ownLeft:ownDays-uO,remaining:carryIn-uC+ownDays-uO,tracked});
+    const info=Object.assign({},p,{carryOrigin:carryIn>0?carryOrigin:null,carryIn,negIn,used:uC+uO,carryLeft:carryIn-uC,ownLeft:ownDays-uO,remaining:carryIn-uC+ownDays-uO,tracked});
     res.periods.push(info);
-    if(refX<p.end){res.cur=info;}
+    // 離職日恰為期間末日仍走離職結算，不先遞延或重複結轉。
+    if(refX<p.end||(p.end===refX&&pd(e.leave)===refX-DAY)){res.cur=info;}
+    else if(p.preGrant){carry=info.remaining;} // 到職半年不是年度終結，預支直接抵首筆權益。
     else if(tracked){const ymEnd=ymOf(p.end-DAY),total=info.remaining;
       if(total<-1e-9){const dec=negDecision(e,ymEnd,total);res.negatives.push({ym:ymEnd,days:D2(total),label:p.label,dec});carry=dec==='waive'?0:total;}
       else{const pay=e.yearEnd==='defer'?Math.max(0,info.carryLeft):Math.max(0,total);
-        if(pay>1e-9)res.payouts.push({ym:ymEnd,days:pay,label:p.label});
-        carry=e.yearEnd==='defer'?Math.max(0,info.ownLeft):0;}}
+        if(pay>1e-9)res.payouts.push({ym:ymEnd,days:pay,label:p.label,carryDays:Math.min(pay,Math.max(0,info.carryLeft)),carryOrigin:info.carryOrigin});
+        carry=e.yearEnd==='defer'?Math.max(0,info.ownLeft):0;carryOrigin=carry>0?{start:p.start,end:p.end,days:carry,system:e.leaveSystem||'anniv',hire:e.hire}:null;}}
     else carry=0;
   }
   if(!res.next&&res.cur){const i=P.list.indexOf(P.list.find(x=>x.start===res.cur.start));res.next=P.list[i+1]||null;}
@@ -1022,11 +1051,14 @@ function computeLive(e,ym,r){
   const hrly=isHourly(e),hr=hourly(e),dw=daily(e),pr=employment(e,ym),refX=refXFor(e,ym);
   const LS=leaveStatus(e,refX),L=processLate(e,r,ym,LS),ML=monthLeave(e,r),A=ML.A,ot=otSummary(e,r,A);
   const H=x=>(+x||0)/HPD,warns=[];
+  if(r.annualEvents.concat(A.annualItems).some(x=>(+x.hours||0)>0&&annualShiftHours(e,x.date)==null))warns.push('特休紀錄缺少可確認的當日正常班表（或不是工作日）：不推定整日，超過餘額部分改列事假；請先核對班表與日期。');
   // 審核：系統自動計算、更正或補足的金額須人工審核（通過／不採用）；金額變動後需重審
   const rv=r.reviews||{},reviews=[];
-  const decide=(key,label,detail,amt,sig,ack)=>{if(!amt&&!sig)return 'none';sig=sig||String(Math.round(amt));const x=rv[key];const st=x&&x.v===sig?x.d:'pending';
+  const decide=(key,label,detail,amt,sig,ack)=>{if(!amt&&!sig)return 'none';sig=sig||String(Math.round(amt));const x=rv[key];const st=x&&x.v===sig&&(!ack||x.d==='ok')?x.d:'pending';
     reviews.push({key,label,detail,amt:Math.round(amt||0),sig,st,ack:!!ack});return st;};
   const sickD=H(ML.sick),menD=H(ML.menstrual),famD=H(ML.family),paidD=H(ML.paidLeave);
+  const annualDates=new Map();r.annualEvents.map(x=>({...x,source:'manual'})).concat(A.annualItems).forEach(x=>{const t=pd(x.date);if(t==null)return;const a=annualDates.get(t)||{hours:0,sources:new Set(),records:[]};a.hours+=+x.hours||0;a.sources.add(x.source);a.records.push([x.source,+x.hours||0]);annualDates.set(t,a);});
+  for(const [t,a] of annualDates){const shift=annualShiftHours(e,fd(t));if((shift!=null&&a.hours>shift+1e-9)||a.sources.size>1){const detail=fd(t)+' 特休同日合計 '+D2(a.hours)+' 小時，'+(a.sources.size>1?'有不同入口紀錄，':'')+'請核對是否重複或超過正常班別；系統保留原始紀錄，不自動去重。';warns.push(detail);decide('annualSources:'+fd(t),'核對同日特休來源',detail+' 確認各筆皆為不同請假時段後，逐項確認無誤；若有重複請先更正原紀錄。',0,JSON.stringify({date:fd(t),shift,records:a.records,hire:e.hire,leave:e.leave,system:e.leaveSystem}),true);}}
   const annualH=r.annualEvents.reduce((s,x)=>s+(+x.hours||0),0)+A.leaveH.annual;  // 計時人員照給時另扣除改計事假的時數（見下）
   // 不滿一天的特休超過餘額：不足部分改以事假計（審核）
   let annualShortH=D2((LS.partialShort[ym]||0)*HPD);
@@ -1076,24 +1108,31 @@ function computeLive(e,ym,r){
     else{otPay=fixed;otNote=`定額 ${N(fixed)}；依法計算 ${N(legal)}，定額未低於法定`;}}
   if(ot.ext>46)warns.push(`本月延長工時（含休息日）${D2(ot.ext)} 小時，超過 46 小時上限（§32）`);
   // 特休未休工資
-  let payDays=0;const payNotes=[];
-  LS.payouts.filter(p=>p.ym===ym).forEach(p=>{payDays+=p.days;payNotes.push(p.label+'期間年度終結未休 '+D2(p.days)+' 日');});
+  let payDays=0;const payNotes=[],deferredPayParts=[];
+  LS.payouts.filter(p=>p.ym===ym).forEach(p=>{payDays+=p.days;if(p.carryDays>1e-9)deferredPayParts.push({days:p.carryDays,origin:p.carryOrigin});payNotes.push(p.label+'期間年度終結未休 '+D2(p.days)+' 日');});
   let clawDays=0;
   if(pr.leavesThisMonth&&LS.ok){const lv=pd(e.leave);let rem=LS.cur?LS.cur.remaining:0;let short=0;
-    LS.negatives.filter(n=>n.ym===ym).forEach(n=>{rem+=n.days;});   // 離職當月剛好年度終結的透支，一併結算
+    // cur.remaining 已含前期結轉負數；再次加總 negatives 會重複扣回。
     if(e.leaveSystem==='cal'){const P=periodsFor(e,lv+DAY);const cumA=P.segs.filter(s=>s.start<=lv).reduce((s,x)=>s+x.days,0),cumC=P.list.filter(p=>p.start<=lv).reduce((s,x)=>s+x.days,0);short=Math.max(0,D2(cumA-cumC));}
-    const net=D2(rem+short);
-    if(net>1e-9){payDays+=net;payNotes.push('離職未休 '+D2(Math.max(0,rem))+' 日'+(short?'＋曆年制少於週年制差額 '+D2(short)+' 日':''));}
+    const net=rem+short; // 保留時數精度，最後換算金額才四捨五入。
+    if(net>1e-9){payDays+=net;if(LS.cur&&LS.cur.carryLeft>1e-9)deferredPayParts.push({days:Math.min(net,LS.cur.carryLeft),origin:LS.cur.carryOrigin});payNotes.push('離職未休 '+D2(Math.max(0,rem))+' 日'+(short?'＋曆年制少於週年制差額 '+D2(short)+' 日':''));}
     else if(net<-1e-9){clawDays=-net;}}
   const negNotes=[];LS.negatives.filter(n=>n.ym===ym&&!pr.leavesThisMonth).forEach(n=>{const sig='n'+n.days,x=rv.annualNeg,st=x&&x.v===sig?x.d:'pending';
     reviews.push({key:'annualNeg',label:'特休年度透支結算',detail:`${n.label}期間透支 ${D2(-n.days)} 日（${D2(-n.days*HPD)} 時）：請選擇以隔年特休抵充，或直接送給員工`,amt:0,sig,st,
       opts:[['carry','抵充隔年特休'],['waive','送給員工']]});
     negNotes.push(`${n.label}期間透支 ${D2(-n.days)} 日：`+(st==='carry'?'以隔年特休抵充':st==='waive'?'送給員工（不抵充）':'待決定'));});
-  let annualPay=Math.round(payDays*dw),annualClaw=0;
+  const deferredNeeds=[],deferredDetails=[];let annualExact=payDays*dw;
+  // 已核對的遞延期間尚在有效期，不能用改過的全域設定靜默重建舊政策。
+  for(const b of Object.values(e.leaveWageBases||{})){if(b&&Number.isFinite(b.end)&&b.end<=refX&&refX<=addM(b.end,12)&&(b.hire!==e.hire||b.system!==(e.leaveSystem||'anniv')||(b.yearEnd||'defer')!==(e.yearEnd||'pay'))){const reason='原期 '+fd(b.start)+'～'+fd(b.end-DAY)+' 已核對遞延，但到職日／特休制度／年度處理設定已變更；歷史政策尚待核對，不能自動重建。';deferredNeeds.push({origin:null,reason});deferredDetails.push({days:0,origin:null,basis:{ok:false,reason}});warns.push(reason);}}
+
+  for(const part of deferredPayParts){annualExact-=part.days*dw;const basis=resolveLeaveBasis(e,part.origin);deferredDetails.push({days:part.days,origin:part.origin,basis});
+    if(!basis.ok){deferredNeeds.push({origin:part.origin,reason:basis.reason});warns.push('遞延特休結算尚未完成：'+basis.reason+'；草稿不含該筆金額，禁止確認及正式匯出。');}
+    else{annualExact+=part.days*basis.dayWage;payNotes.push('遞延原期 '+fd(part.origin.start)+'～'+fd(part.origin.end-DAY)+'：'+D2(part.days)+' 日 × 原年度日薪 '+N(basis.dayWage));}}
+  let annualPay=Math.round(annualExact),annualClaw=0;
   if(clawDays>0){const amt=Math.round(clawDays*dw);
     if(decide('annualClawback','離職結算：預支特休扣回',`離職時特休超休 ${D2(clawDays)} 日（${D2(clawDays*HPD)} 時）× 日薪 ${N(dw)}，依約定自離職當月薪資扣回`,amt)!=='no'){annualClaw=amt;negNotes.push(`離職時超休 ${D2(clawDays)} 日，扣回 ${N(amt)}`);}
     else negNotes.push(`離職時超休 ${D2(clawDays)} 日，審核不採用，未扣回`);}
-  if(annualPay&&decide('annualPay','特休未休工資',payNotes.join('；')+`（日薪 ${N(dw)}）`,annualPay)==='no'){annualPay=0;payNotes.push('審核不採用，未發給');}
+  if(annualPay&&decide('annualPay','特休未休工資',payNotes.join('；')+`（日薪 ${N(dw)}）`,annualPay,JSON.stringify({payDays,dw,deferredDetails}))==='no'){annualPay=0;payNotes.push('審核不採用，未發給');}
   // 勞健保、勞退
   const pw=(+e.pensionWage>0)?+e.pensionWage:(isNaN(+e.laborGrade)?0:+e.laborGrade);
   let labor=+e.labor||0,health=+e.health||0,pensionSelf=Math.round(pw*(+e.pensionSelf||0)/100),pensionEr=Math.round(pw*0.06);
@@ -1145,7 +1184,7 @@ function computeLive(e,ym,r){
   const absence={absentDays:A.absent,pendingDays:A.pending,offsetH:D2(L.offsetDays*HPD),pendingH:D2(A.pendingH),absentH:D2(A.absentH),lateMin:L.totalMin,missing:A.missing,total:D2(A.pendingH+A.absentH+L.totalMin/60)};
   const hoursInfo=hrly?{rate:hr,regH:D2(A.regH+(+r.att.extraHours||0)),extraH:D2(+r.att.extraHours||0),holidayH:D2(A.holidayH),offH:D2(A.offH),paidLeaveH:D2(ML.paidLeave),annualH:D2(annualH),
     halfH:D2((sickHalf+menOwn)*HPD),typhoonH:D2(typhoonPaid?A.typhoonH:0),typhoonWorkH:D2(A.typhoonWorkH)}:null;
-  return {negNotes,hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
+  return {deferredNeeds,deferredDetails,settlementBlocked:deferredNeeds.length>0,negNotes,hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
     hr,dw,wage:wageBase(e),ot:{weekday:ot.weekday,rest:ot.rest,holiday:ot.holiday,offday:ot.offday,pay:ot.pay,count:ot.count,hours:ot.hours,ext:ot.ext},
     typhoon:{days:A.typhoon,h:D2(A.typhoonH),workH:D2(A.typhoonWorkH)},attend:{sched:A.sched,worked:A.worked,workH:D2(A.workH),regH:D2(A.regH+(+r.att.extraHours||0)),holidayWork:A.holidayWork,hasDays:(r.days||[]).length>0},absence,
     leave:{sick:D2(sickD),men:D2(menD),personal:D2(perD),family:D2(famD),paid:D2(paidD),annualH:D2(annualH),sickYear:D2(sickPrior+sickAll),sickFullDays:D2(sickFull)},
@@ -1249,7 +1288,7 @@ function saveEmp(){
     brkMin:num('e_brkMin'),brkAfter:num('e_brkAfter'),lateUnit:$('e_lateUnit').value,lateFallback:$('e_lateFallback').value,fixedItems:readFixedItems(),
     sched:Object.assign({tpl:readSc('t')},Object.fromEntries([0,1,2,3,4,5,6].map(i=>{applyTpl();return ['d'+i,Object.assign(readSc('d'+i),{useTpl:$('sc_d'+i+'_use').checked})];})))};
   const i=state.employees.findIndex(x=>x.id===id);addLog(i>=0?'修改員工資料':'新增員工',empDiff(i>=0?state.employees[i]:null,rec),'',null);
-  if(i>=0)state.employees[i]=rec;else state.employees.push(rec);state.log[state.log.length-1].emp=name;
+  if(i>=0){rec.leaveWageBases=state.employees[i].leaveWageBases;state.employees[i]=rec;}else state.employees.push(rec);state.log[state.log.length-1].emp=name;
   save();renderEmp();closeEmp();toast('已儲存 '+name);}
 function delEmp(id){const e=emp(id);if(!confirm('確定刪除「'+e.name+'」？所有月份的資料都會一併刪除。'))return;
   addLog('刪除員工',e.name);state.employees=state.employees.filter(x=>x.id!==id);Object.values(state.months).forEach(M=>delete M[id]);save();renderEmp();toast('已刪除');}
@@ -1596,9 +1635,9 @@ function renderSlips(){
     const inp=(lb,val,neg)=>`<span class="v">${neg&&val?'<span class="mn">-</span>':''}<input class="slip-in${c.overridden.includes(lb)?' ovon':''}" type="text" inputmode="decimal" value="${N(val)}" data-eid="${e.id}" data-lb="${esc(lb)}"${dis} onchange="slipEdit(this)" title="點此可直接修改"></span>`;
     const earn=visibleRows(c,c.earnings).map(x=>{const hd=hourDetail(c,x[0]);return `<div class="li"><span class="lb">${x[0]}${mark(x[0])}${hd?`<small class="hd">${esc(hd)}</small>`:''}</span>${inp(x[0],x[1],false)}</div>`;}).join('');
     const ded=visibleRows(c,c.deducts).map(x=>`<div class="li${x[1]?'':' zero'}"><span class="lb">${x[0]}${mark(x[0])}</span>${inp(x[0],x[1],true)}</div>`).join('');
-    const notes=[];const lt=lateText(c);if(lt)notes.push(lt);if(c.perfectNote)notes.push('全勤：'+c.perfectNote);if(c.otNote)notes.push('加班費：'+c.otNote);(c.warns||[]).forEach(w=>notes.push('⚠ '+w));c.payNotes.forEach(n=>notes.push('特休未休工資：'+n+'（日薪 '+N(c.dw)+'）'));(c.negNotes||[]).forEach(n=>notes.push('特休透支：'+n));
+    const notes=[];const lt=lateText(c);if(lt)notes.push(lt);if(c.perfectNote)notes.push('全勤：'+c.perfectNote);if(c.otNote)notes.push('加班費：'+c.otNote);(c.warns||[]).forEach(w=>notes.push('⚠ '+w));c.payNotes.forEach(n=>notes.push('特休未休工資：'+n+'（本期日薪 '+N(c.dw)+'；遞延依原期基準）'));(c.negNotes||[]).forEach(n=>notes.push('特休透支：'+n));
     const cbadge=c.confirmed?'<span class="cbadge yes">✓ 已確認（鎖定）</span>':'<span class="cbadge no">尚未確認</span>';
-    return `<div class="slip${c.confirmed?' done':''}">
+    return `<div class="slip${c.confirmed?' done':''}${c.settlementBlocked?' settlement-blocked':''}">
       <div class="slip-actions no-print">${cbadge}<span class="grow"></span>
         ${c.locked?'':`<button class="btn ghost tiny" onclick="openOv('${e.id}')">最後確認 / 修改</button>`}
         <button class="btn ${c.confirmed?'ghost':'primary'} tiny" onclick="toggleConfirm('${e.id}')"${!c.confirmed&&c.pendingReviews?' style="opacity:.5" title="尚有待審核項目"':''}>${c.confirmed?'取消確認':(c.pendingReviews?'確認（待審核 '+c.pendingReviews+'）':'確認')}</button></div>
@@ -1608,7 +1647,7 @@ function renderSlips(){
       <div class="slip-body">
         <div class="col earn"><h4>應發項目</h4>${earn}<div class="li sum"><span class="lb">應發合計</span><span class="v">${N(c.gross)}</span></div></div>
         <div class="col ded"><h4>應扣項目</h4>${ded}<div class="li sum"><span class="lb" style="color:var(--ink)">應扣合計</span><span class="v">${c.totalDed?'-':''}${N(c.totalDed)}</span></div></div></div>
-      <div class="slip-foot"><span class="lbl">實發金額</span><span class="net">${N(c.net)}</span></div>
+      <div class="slip-foot"><span class="lbl">${c.settlementBlocked?'未完成草稿小計（不可付款）':'實發金額'}</span><span class="net">${N(c.net)}</span></div>
       ${(()=>{const s=attSum(c);return `<div class="slip-att">
         <div><div class="k">出勤</div><div class="v">${s.att}</div></div>
         ${(()=>{const t=hoursTotal(c);return t?`<div><div class="k">計時工時</div><div class="v">${t.work} 時<br><small>照給 ${t.paid} 時・加班 ${t.ot} 時</small></div></div>`:'';})()}
@@ -1651,7 +1690,7 @@ function setOv(label,v){const m=mrec(ovEmpId);if(v===''){delete m.overrides[labe
   const c=compute(emp(ovEmpId));$('ovSummary').innerHTML=`實發金額 <b style="color:var(--pos)">NT$ ${N(c.net)}</b>　·　尚未確認`;}
 function clearOv(){mrec(ovEmpId).overrides={};addLog('全部恢復自動計算','',curYM(),ovEmpId);save();renderOv();toast('已恢復自動計算');}
 function setConfirm(id,on){const m=mrec(id),e=emp(id);
-  if(on){const c=computeLive(e,curYM(),m);if(c.pendingReviews){toast(e.name+' 還有 '+c.pendingReviews+' 項待審核，審核完才能確認');return false;}
+  if(on){const c=computeLive(e,curYM(),m);if(c.settlementBlocked){toast('缺少經核對的原年度工資基準，不能確認薪資');return false;}if(c.pendingReviews){toast(e.name+' 還有 '+c.pendingReviews+' 項待審核，審核完才能確認');return false;}
     m.snapshot=JSON.parse(JSON.stringify(c));m.confirmed=true;m.confirmedAt=new Date().toISOString();addLog('確認薪資單','實發 '+N(c.net),curYM(),id);}
   else{m.confirmed=false;m.snapshot=null;m.confirmedAt='';addLog('取消確認','',curYM(),id);}
   save();toast(on?'已確認並鎖定 '+e.name:'已取消確認 '+e.name);return true;}
@@ -1916,15 +1955,15 @@ function setReview(eid,key,d){const e=emp(eid),c=computeLive(e,curYM(),mrec(eid)
   const optL=it.opts&&(it.opts.find(o=>o[0]===d)||[])[1];
   addLog(optL?'審核：'+optL:d==='ok'?'審核通過':'審核不採用',`${it.label}${it.amt?'（'+N(it.amt)+'）':''}：${it.detail}`,curYM(),eid);save();renderSlips();}
 function approveAll(eid){const e=emp(eid),m=mrec(eid);if(m.confirmed)return;const c=computeLive(e,curYM(),m);m.reviews=m.reviews||{};let n=0;
-  c.reviews.filter(x=>x.st==='pending'&&!x.opts&&x.key!=='otSources').forEach(it=>{m.reviews[it.key]={d:'ok',v:it.sig,t:new Date().toISOString()};n++;addLog('審核通過',`${it.label}${it.amt?'（'+N(it.amt)+'）':''}：${it.detail}`,curYM(),eid);});
-  save();renderSlips();const left=c.reviews.filter(x=>x.st==='pending'&&(x.opts||x.key==='otSources')).length;toast('已通過 '+n+' 項'+(left?'；剩餘項目需個別確認':''));}
-function reviewBlock(e,c){if(!c.reviews||!c.reviews.length)return '';const lock=c.locked;
+  c.reviews.filter(x=>x.st==='pending'&&!x.opts&&!x.ack).forEach(it=>{m.reviews[it.key]={d:'ok',v:it.sig,t:new Date().toISOString()};n++;addLog('審核通過',`${it.label}${it.amt?'（'+N(it.amt)+'）':''}：${it.detail}`,curYM(),eid);});
+  save();renderSlips();const left=c.reviews.filter(x=>x.st==='pending'&&(x.opts||x.ack)).length;toast('已通過 '+n+' 項'+(left?'；剩餘項目需個別確認':''));}
+function reviewBlock(e,c){const blocked=deferredBasisBlock(e,c);if(!c.reviews||!c.reviews.length)return blocked;const lock=c.locked;
   const rows=c.reviews.map(it=>{const oL=it.opts&&(it.opts.find(o=>o[0]===it.st)||[])[1];
     const badge=oL?`<span class="pill ok">${esc(oL)}</span>`:it.st==='ok'?'<span class="pill ok">已通過</span>':it.st==='no'?'<span class="pill warn">不採用</span>':'<span class="pill gold">待審核</span>';
     const btn=lock?'':it.opts?it.opts.map(([k,t])=>`<button class="btn ${it.st===k?'primary':'ghost'} tiny" onclick="setReview('${e.id}','${it.key}','${k}')">${esc(t)}</button>`).join(''):(it.ack?`<button class="btn ghost tiny" onclick="setReview('${e.id}','${it.key}','ok')">確認無誤</button>`
       :`<button class="btn ghost tiny" onclick="setReview('${e.id}','${it.key}','ok')">✓ 通過</button><button class="btn danger tiny" onclick="setReview('${e.id}','${it.key}','no')">✕ 不採用</button>`);
     return `<tr><td>${badge}</td><td><b>${esc(it.label)}</b><br><span style="color:var(--muted)">${esc(it.detail)}</span></td><td class="num">${it.amt?N(it.amt):''}</td><td style="white-space:nowrap;text-align:right">${btn}</td></tr>`;}).join('');
-  return `<div class="slip-review no-print"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b>系統自動計算／更正項目</b>
+  return blocked+`<div class="slip-review no-print"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b>系統自動計算／更正項目</b>
     ${c.pendingReviews?`<span class="pill gold">${c.pendingReviews} 項待審核</span>`:'<span class="pill ok">已全部審核</span>'}<span style="flex:1"></span>
     ${!lock&&c.pendingReviews?`<button class="btn ghost tiny" onclick="approveAll('${e.id}')">全部通過</button>`:''}</div>
     <table class="rv-tbl">${rows}</table><div style="font-size:11.5px;color:var(--muted);margin-top:4px">「不採用」會改回未自動處理的金額；資料變動使金額改變時需重新審核。全部審核後才能確認薪資單。</div></div>`;}
@@ -2024,7 +2063,7 @@ function isRecord(x){return x!==null&&typeof x==='object'&&!Array.isArray(x);}
 function validateState(s){if(!isRecord(s)||s.version!==3||!isRecord(s.settings)||!Array.isArray(s.employees)||s.employees.some(e=>!isRecord(e))||!isRecord(s.months)||(s.log!==undefined&&!Array.isArray(s.log)))throw new Error('薪資資料格式不完整');
   if(s.log&&s.log.some(x=>!isRecord(x)||['t','ym','emp','action','detail'].some(k=>x[k]!==undefined&&typeof x[k]!=='string')))throw new Error('異動紀錄格式錯誤');if(s.settings.seasons!=null&&!isRecord(s.settings.seasons))throw new Error('寒暑假設定格式錯誤');
   const stack=[s];while(stack.length){const x=stack.pop();if(x&&typeof x==='object')for(const [k,v]of Object.entries(x)){if(typeof v==='number'&&!Number.isFinite(v))throw new Error('資料含非有限數值，未讀取');if(['__proto__','prototype','constructor'].includes(k))throw new Error('資料含不安全欄位');if(v&&typeof v==='object')stack.push(v);}}
-  for(const e of s.employees){if(e.sched!=null&&!isRecord(e.sched))throw new Error('排班資料格式錯誤');if(e.fixedItems!=null&&(!Array.isArray(e.fixedItems)||e.fixedItems.some(x=>!isRecord(x))))throw new Error('固定薪資項目格式錯誤');}
+  for(const e of s.employees){if(e.leaveWageBases!=null&&(!isRecord(e.leaveWageBases)||Object.values(e.leaveWageBases).some(b=>!isRecord(b)||!Array.isArray(b.history))))throw new Error('遞延工資基準資料格式錯誤');if(e.sched!=null&&!isRecord(e.sched))throw new Error('排班資料格式錯誤');if(e.fixedItems!=null&&(!Array.isArray(e.fixedItems)||e.fixedItems.some(x=>!isRecord(x))))throw new Error('固定薪資項目格式錯誤');}
   for(const [ym,M]of Object.entries(s.months)){if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)||!isRecord(M)||Object.values(M).some(r=>!isRecord(r)))throw new Error('月份資料格式錯誤');
     for(const r of Object.values(M)){for(const k of ['days','otEvents','annualEvents','lateEvents','items'])if(r[k]!=null&&(!Array.isArray(r[k])||r[k].some(x=>!isRecord(x))))throw new Error('月份明細格式錯誤');
       for(const k of ['att','absChoice','overrides','reviews','snapshot'])if(r[k]!=null&&!isRecord(r[k]))throw new Error('月份設定格式錯誤');}}
@@ -2238,7 +2277,7 @@ function switchAllCal(){const list=state.employees.filter(e=>e.leaveSystem!=='ca
 
 function pTag(){return curYM();}
 function val(arr,l){const f=arr.find(x=>x[0]===l);return f?f[1]:0;}
-function exportExcel(){
+function exportExcel(){if(!payrollReadyForOutput())return;
   if(!state.employees.length){toast('尚無員工資料');return;}
   const {wm,pd:pday}=payLabel();
   const CS=state.employees.map(e=>compute(e)),cE=[...new Set(CS.flatMap(c=>c.customE||[]))],cD=[...new Set(CS.flatMap(c=>c.customD||[]))];
@@ -2252,7 +2291,7 @@ function exportExcel(){
   dl(new Blob([buildXlsx('薪資總表',rows)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'百宏薪資總表_'+pTag()+'.xlsx');
   toast('已匯出 Excel 總表');}
 
-function exportWord(){
+function exportWord(){if(!payrollReadyForOutput())return;
   if(!state.employees.length){toast('尚無員工資料');return;}
   const {wm,pd:pday}=payLabel(),period=wm+'薪資'+(pday?'　發薪日 '+pday:'');
   const slips=state.employees.map((e,idx)=>{

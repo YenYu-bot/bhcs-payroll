@@ -1,4 +1,4 @@
-name: Payroll calculation phase1 isolated validation
+name: Payroll leave settlement isolated validation
 on:
   push:
     branches: [test/payroll-calculation-phase1-20261112]
@@ -51,7 +51,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: payroll-calculation-phase1-${{ github.sha }}
+          name: payroll-leave-settlement-${{ github.sha }}
           path: tests/payroll-v3-isolated/evidence/
           retention-days: 14
           if-no-files-found: warn

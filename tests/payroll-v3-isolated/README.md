@@ -1,10 +1,11 @@
-# Calculation phase 1 isolated acceptance candidate
+# Leave settlement isolated validation candidate
 
 Test branch only. Root index.html, main, GitHub Pages and production data are unchanged.
 
-Candidate SHA256: 7fee7b0d9296a0b1f56d12d2007c34a1c740cd70f48bc7c64d5a7342e560b42e.
-Changes: monthly weekday automatic OT; same-day tier aggregation; hourly tardiness does not consume annual leave; exceptional offday >8 hours at 2x; input-sensitive reviews and individual duplicate-source acknowledgement. Confirmed snapshots remain unchanged.
+Candidate SHA256: ff5399e07c7e023de6db13c3983acec5d991d82de54e25782109851a7ea64782.
 
-Tests use fictional data. Pinned official dependencies are provisioned before execution. All app, native Chromium and Firebase emulator execution occurs non-root with sandbox enabled in a fresh loopback-only network namespace and clean environment, no production credentials. Workflow has read-only contents permission and no deployment or merge step.
+Includes leave/resignation boundary fixes, pre-six-month advances, actual scheduled full-shift checks, same-day split leave and individual source acknowledgement; deferred leave uses individually verified original-period wage bases. Missing bases block confirmation/output. Confirmed snapshots are not recalculated. This is not a production release or full legal sign-off.
 
-VM tests are not native-browser results. Tests do not constitute full legal sign-off or authorization to release.
+Only fictional employee data. All browser/application/emulator runs remain non-root, Chromium sandbox enabled, in a fresh loopback-only network namespace and clean environment without production credentials. Existing sandbox gate, firewall checks, simulator rules, dependency locks and negative controls remain in place. No merge or deployment step.
+
+The existing full isolated regression, 30 phase1 numeric checks, 30 leave checks, 23 deferred-basis checks, 36 independent leave checks and 21 independent deferred checks are rerun against this exact candidate. Additional native UI tests cover source acknowledgements, original-wage input, local persistence and incomplete-settlement print/output blocking. VM assertions are not native-browser results.
