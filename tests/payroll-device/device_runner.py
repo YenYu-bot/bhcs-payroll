@@ -5,6 +5,7 @@ network namespace after sandbox_gate.py, under supervise.py. Does not edit app.
 """
 import argparse, copy, hashlib, json, os, sys, time, traceback
 from pathlib import Path
+from urllib.parse import urlsplit
 
 APP_SHA = '1689c2a585a54849be4fa09f607e482d5184dfbb70398ffc3ac50f77ede21586'
 PW = 'synthetic-migration-only-password'
@@ -18,6 +19,13 @@ FIXED_DATE = """(()=>{const Real=Date;class Fixed extends Real {constructor(...a
 
 def need(ok, msg):
     if not ok: raise AssertionError(msg)
+def wait(p,expression,timeout=45000):
+    deadline=time.monotonic()+timeout/1000
+    while time.monotonic()<deadline:
+        if p.evaluate('()=>Boolean('+expression+')'):return
+        p.wait_for_timeout(50)
+    raise AssertionError('Timed out waiting for '+expression)
+
 def digest(obj): return hashlib.sha256(json.dumps(obj,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
 def payload(obj, name='synthetic.json'):
     return {'name':name,'mimeType':'application/json','buffer':(obj if isinstance(obj,str) else json.dumps(obj,ensure_ascii=False)).encode()}
@@ -27,28 +35,43 @@ def state_on_disk(p):
     return json.loads(r['values']['bhcs_payroll_device_test_v3'])
 def page(env,ctx):
     p=env.h.app_page(ctx,env.srv.base)
-    p.wait_for_function('localDB.db!==null || localDB.failed!==null')
+    wait(p,'localDB.db!==null || localDB.failed!==null')
     need(p.evaluate('localDB.failed===null'),'storage open failed')
     return p
 
 def context(env,name,**kwargs):
-    c=env.h.guard(env,name,fb_base_guard=False,substitute=False,accept_downloads=True,timezone_id='UTC',**kwargs)
+    # No WebSocket interception: exercise native CSP. OS netns has no uplink.
+    c=env.b.new_context(service_workers='block',accept_downloads=True,timezone_id='UTC',locale='zh-TW',**kwargs)
+    env.contexts.append(c)
+    def route(r):
+        u=urlsplit(r.request.url);ok=u.scheme=='http' and u.hostname=='127.0.0.1' and u.port==env.srv.port
+        env.log({'kind':'route','ctx':name,'decision':'ALLOW' if ok else 'BLOCK','origin':u.scheme+'://'+u.netloc,'path':u.path})
+        r.continue_() if ok else r.abort('blockedbyclient')
+    c.route('**/*',route)
+    c.add_init_script(script='window.__BSDK_NO_FB_GUARD=true;'+env.h.HOOKS)
     c.add_init_script(script=FIXED_DATE)
+    c.dialogs=[];c.policy=lambda d:True;c.errors=[]
+    def wire(pg):
+        def dlg(d):
+            c.dialogs.append({'type':d.type,'message':d.message[:160]})
+            d.accept() if c.policy(d) else d.dismiss()
+        pg.on('dialog',dlg);pg.on('pageerror',lambda e:c.errors.append(str(e)[:300]));pg.set_default_timeout(45000)
+    c.on('page',wire)
     return c
 
 def setup(p,obj):
     # Observe completion of the real UI file input handler, preserving its implementation.
     p.evaluate("()=>{const o=window.initializeFromBackup;window.initializeFromBackup=async function(...a){window.__migSetup={done:false};try{const v=await o.apply(this,a);window.__migSetup={done:true,result:v};return v;}catch(e){window.__migSetup={done:true,error:String(e)};throw e;}};}")
     p.set_input_files('input[onchange="initializeFromBackup(this)"]',payload(obj))
-    p.wait_for_function('window.__migSetup && __migSetup.done',timeout=60000)
+    wait(p,'window.__migSetup && __migSetup.done',timeout=60000)
     return p.evaluate('__migSetup')
 
 def import_file(p,obj):
     p.evaluate("()=>{window.__migImport={done:false};const orig=window.dataOp;window.dataOp=function(...a){const promise=orig.apply(this,a);return promise.then(v=>{window.__migImport={done:true,result:v};return v;},e=>{window.__migImport={done:true,error:String(e)};throw e;});};}")
     p.set_input_files('input[onchange="importData(this)"]',payload(obj))
-    p.wait_for_function('window.__migImport.done',timeout=60000)
+    wait(p,'window.__migImport.done',timeout=60000)
     env_result=p.evaluate('__migImport')
-    p.wait_for_function('persistence.operations===0 && persistence.pending===0')
+    wait(p,'persistence.operations===0 && persistence.pending===0')
     return env_result
 
 def init_legacy(env):
@@ -75,7 +98,7 @@ def v3_preserve(env):
     c=context(env,'M02-v3');p=page(env,c);fixture=copy.deepcopy(env.fixture)
     need(setup(p,fixture).get('result') is True,'setup fail');d=state_on_disk(p)
     for k in ('employees','months'):need(d[k]==fixture[k],k+' changed')
-    before=root(p);p.reload(wait_until='domcontentloaded');p.wait_for_function('localDB.ready');need(root(p)==before,'reload wrote root')
+    before=root(p);p.reload(wait_until='domcontentloaded');wait(p,'localDB.ready');need(root(p)==before,'reload wrote root')
     need(p.evaluate('state.months')==fixture['months'],'reload mutated historical snapshots')
     return {'months':sorted(fixture['months']),'confirmedSnapshotDigest':digest(fixture['months']['2026-09']['E1']['snapshot']),'rootDigest':digest(before)}
 
@@ -101,9 +124,9 @@ def first_race(env):
     a=copy.deepcopy(env.fixture);b=copy.deepcopy(a);a['settings']['fixtureMarker']='FIRST-A';b['settings']['fixtureMarker']='FIRST-B'
     for pg,obj in [(p,a),(q,b)]:
         pg.evaluate("(obj)=>{window.__firstResult={done:false};initializeFromBackup({files:[new File([JSON.stringify(obj)],'synthetic.json',{type:'application/json'})],value:'x'}).then(v=>window.__firstResult={done:true,result:v});}",obj)
-        pg.wait_for_function('__initGate.reached')
+        wait(pg,'__initGate.reached')
     for pg in (p,q):pg.evaluate('__initGate.release()')
-    for pg in (p,q):pg.wait_for_function('__firstResult.done')
+    for pg in (p,q):wait(pg,'__firstResult.done')
     results=[pg.evaluate('__firstResult.result') for pg in (p,q)];need(results.count(True)==1 and results.count(False)==1,'initializations did not yield exactly one winner')
     rec=root(p);need(rec['revision']==1,'bootstrap increment wrong');d=json.loads(rec['values']['bhcs_payroll_device_test_v3'])
     expected=a if results[0] else b
@@ -135,8 +158,8 @@ def legacy_retention(env):
     need(setup(p,env.fixture).get('result') is True,'setup fail');before=root(p)
     need(p.evaluate('localStorage.getItem(KEY)')==legacy,'setup deleted legacy')
     q=c.new_page();q.goto(env.srv.base+'/observer');q.evaluate("()=>localStorage.setItem('bhcs_payroll_device_test_v3','synthetic-new-legacy-write')")
-    p.wait_for_function("cloud.conflict===true")
-    need(root(p)==before,'legacy writer changed root');p.reload(wait_until='domcontentloaded');p.wait_for_function('localDB.ready')
+    wait(p,"cloud.conflict===true")
+    need(root(p)==before,'legacy writer changed root');p.reload(wait_until='domcontentloaded');wait(p,'localDB.ready')
     need(root(p)==before,'reload migrated newer localStorage');need(p.evaluate('state.settings.fixtureMarker')=='FIXTURE-A','canonical state replaced')
     need(p.evaluate("localStorage.getItem(KEY)")=='synthetic-new-legacy-write','legacy content removed')
     return {'rootUnchanged':True,'legacyRetained':True,'note':'Same-origin legacy localStorage only; no old-version cloud client is run.'}
@@ -150,7 +173,7 @@ def narrow_encrypted_roundtrip(env):
     p.fill('#storageSetupPass',PW)
     need(setup(p,packet).get('result') is True,'encrypted setup failed')
     need(p.evaluate('sec.locked'),'encrypted startup did not lock')
-    p.fill('#lockPass',PW);p.click('#lockUnlock');p.wait_for_function('!sec.locked && persistence.operations===0',timeout=60000)
+    p.fill('#lockPass',PW);p.click('#lockUnlock');wait(p,'!sec.locked && persistence.operations===0',timeout=60000)
     need(p.evaluate('state.months')==env.fixture['months'],'encrypted import changed snapshots')
     with p.expect_download() as wait:
         p.evaluate('exportData()')
@@ -160,7 +183,7 @@ def narrow_encrypted_roundtrip(env):
     need(decoded['months']==env.fixture['months'] and decoded['employees']==env.fixture['employees'],'export core mismatch')
     c2=context(env,'M07-import-exported',viewport={'width':390,'height':844});q=page(env,c2)
     q.fill('#storageSetupPass',PW);need(setup(q,body).get('result') is True,'downloaded backup import failed')
-    q.fill('#lockPass',PW);q.click('#lockUnlock');q.wait_for_function('!sec.locked && persistence.operations===0',timeout=60000)
+    q.fill('#lockPass',PW);q.click('#lockUnlock');wait(q,'!sec.locked && persistence.operations===0',timeout=60000)
     need(q.evaluate('state.months')==env.fixture['months'],'download-import roundtrip changed snapshots')
     r=root(q);need(r['values']['bhcs_payroll_device_test_v3'] is None and r['values']['bhcs_payroll_device_test_v3_enc'] is not None,'cipher/plain placement invalid')
     return {'viewport':{'width':390,'height':844},'passwordField':box,'snapshotDigest':digest(env.fixture['months']),'downloadedBackupEncrypted':True,'note':'Desktop Chromium viewport only, NOT Android or Samsung device verification.'}
@@ -195,7 +218,7 @@ def supplied_fixture(env):
     packet=json.loads((Path(env.device_root)/'synthetic-encrypted.json').read_text())
     pw='DeviceTest-Only-2026'
     p.fill('#storageSetupPass',pw);need(setup(p,packet).get('result') is True,'supplied encrypted fixture import failed')
-    p.fill('#lockPass',pw);p.click('#lockUnlock');p.wait_for_function('!sec.locked && persistence.operations===0',timeout=60000)
+    p.fill('#lockPass',pw);p.click('#lockUnlock');wait(p,'!sec.locked && persistence.operations===0',timeout=60000)
     for k in ['settings','employees','months']:need(p.evaluate('state['+json.dumps(k)+']')==env.fixture[k],'supplied fixture differs '+k)
     return {'suppliedBackup':'synthetic-encrypted.json','contentMatchesPlainFixture':True}
 
