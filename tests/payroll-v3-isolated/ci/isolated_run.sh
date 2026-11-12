@@ -37,3 +37,7 @@ python3 -I "$ROOT/harness/supervise.py" --out "$OUT/hourly-insurance-ui-supervis
 # Pension amounts are an individually verified statement, not an unverified calendar estimate.
 node "$ROOT/candidate/tests/pension-boundaries.cjs" | tee "$OUT/pension-boundaries.txt"
 python3 -I "$ROOT/harness/supervise.py" --out "$OUT/pension-ui-supervisor" --timeout 420 -- python3 -I "$ROOT/harness/native_pension_ui.py" --candidate-root "$ROOT/candidate" --output "$OUT/pension-ui" > "$OUT/pension-ui.log" 2>&1
+
+# Paid annual leave does not remove the sick-only normal-wage floor; overrides remain guarded.
+node "$ROOT/candidate/tests/paid-annual-sick-floor.cjs" | tee "$OUT/paid-annual-sick-floor.txt"
+python3 -I "$ROOT/harness/supervise.py" --out "$OUT/paid-annual-sick-ui-supervisor" --timeout 420 -- python3 -I "$ROOT/harness/native_paid_annual_sick_ui.py" --candidate-root "$ROOT/candidate" --output "$OUT/paid-annual-sick-ui" > "$OUT/paid-annual-sick-ui.log" 2>&1

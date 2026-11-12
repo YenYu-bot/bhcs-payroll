@@ -1243,10 +1243,10 @@ function computeLive(e,ym,r){
   if(A.pending)warns.push(`未打卡 ${A.pending} 天待確認（${D2(A.pendingH)} 小時）`);
   if(hrly&&hr>0&&hr<MIN_HOUR)warns.push(`時薪 ${hr} 低於 2026 基本工資 ${MIN_HOUR} 元`);
   if(!hrly&&pr.employed&&!pr.partial&&(+e.base||0)>0&&wageBase(e)<MIN_MONTH)warns.push(`月工資 ${N(wageBase(e))} 低於 2026 基本工資 ${N(MIN_MONTH)} 元`);
-  // MOL Q5：整月且僅病假之正常工資不得低於最低工資扣去未給付的病假工資。
+  // MOL Q5／勞基法 §39：整月僅病假減薪（可同月有薪特休），正常工資不得低於最低工資扣去未給付的病假工資。
   // 混合缺勤／破月的底線需另核，不以加班費或其他獎金抵充正常工資。
   let sickFloorTopUp=0,sickFloorRequired=0;const leavePayrollBlocks=menstrual.issues.slice();warns.push(...menstrual.issues);
-  const onlySick=sickD>0&&!menD&&!perD&&!famD&&!carePersonalD&&!A.absentH&&!A.typhoonH&&!L.totalMin&&!annualH&&!ot.hours;
+  const onlySick=sickD>0&&!menD&&!perD&&!famD&&!carePersonalD&&!A.absentH&&!A.typhoonH&&!L.totalMin&&!ot.hours;
   if(!hrly&&pr.employed&&!pr.partial&&onlySick&&ym.slice(0,4)==='2026'){
     const floor=Math.ceil(Math.max(0,MIN_MONTH*(1-(0.5*sickHalf+sickFull)/30))-1e-9);
     sickFloorRequired=floor;
@@ -1262,12 +1262,20 @@ function computeLive(e,ym,r){
   const ap=arr=>arr.map(([l,v])=>{if(ov[l]!=null&&ov[l]!==''){ovList.push(l);return [l,+ov[l]];}return [l,v];});
   earnings=ap(earnings);deducts=ap(deducts);
   if(sickFloorRequired){
+    // 覆寫後仍須符合「只有病假減薪」；來源假別為零不能掩蓋額外缺勤扣款。
+    const otherAbsenceLabels=['生理假扣薪','事假扣薪','曠職扣薪','颱風假扣薪','遲到/早退扣薪'];
+    if(deducts.some(([label,amount])=>otherAbsenceLabels.includes(label)&&amount!==0)){
+      const msg='覆寫後另有非病假缺勤扣薪，已不符僅病假減薪的最低工資核算條件；請還原不符原始紀錄的扣款或另行核算，禁止確認。';leavePayrollBlocks.push(msg);warns.push(msg);
+    }
+    if([...earnings,...deducts].some(([,amount])=>!Number.isFinite(amount)||amount<0)){
+      const msg='病假最低工資核算含負數或無效金額，請更正後再確認；不可利用其他項目負數抵銷正常工資。';leavePayrollBlocks.push(msg);warns.push(msg);
+    }
     const normalLabels=['底薪',...(e.wageSummer!==false?['暑期津貼']:[]),'全勤獎金',...fixAdd.filter((x,i)=>fx.filter(f=>f.type==='add')[i].wage!==false).map(x=>x.l)];
     const normalAfter=earnings.filter(x=>normalLabels.includes(x[0])).reduce((n,x)=>n+x[1],0)-deducts.find(x=>x[0]==='病假扣薪')[1];
     const needed=Math.max(0,sickFloorRequired-normalAfter),row=earnings.find(x=>x[0]==='病假最低工資補足');
     if(ov['病假最低工資補足']==null||ov['病假最低工資補足']==='')row[1]=needed;
     if(row[1]<needed){const msg='手動覆寫後的正常工資低於病假最低工資底線，請更正後再確認。';leavePayrollBlocks.push(msg);warns.push(msg);}
-    if(row[1]>0)decide('sickFloor','病假最低工資補足','整月僅病假：覆寫後正常工資 '+N(normalAfter)+'，請假後最低工資底線 '+N(sickFloorRequired)+'；加班與其他獎金不抵充。',row[1],JSON.stringify({v:2,ym,floor:sickFloorRequired,normal:normalAfter,needed,actual:row[1],att:r.att,days:r.days,absChoice:r.absChoice,overrides:r.overrides}),true);
+    if(row[1]>0)decide('sickFloor','病假最低工資補足','整月僅病假減薪（有薪特休不扣薪）：覆寫後正常工資 '+N(normalAfter)+'，請假後最低工資底線 '+N(sickFloorRequired)+'；加班與其他獎金不抵充。',row[1],JSON.stringify({v:2,ym,floor:sickFloorRequired,normal:normalAfter,needed,actual:row[1],att:r.att,days:r.days,absChoice:r.absChoice,overrides:r.overrides}),true);
   }
   if(!hrly&&(sickD||menD||perD||famD||carePersonalD||ot.hours)&&['底薪','暑期津貼',...fixAdd.map(x=>x.l)].some(k=>ov[k]!=null&&ov[k]!=='')){
     const msg='已覆寫底薪／固定加項，但請假與加班日薪基準尚未另外核對；請改正員工工資設定或移除該覆寫後再確認。';leavePayrollBlocks.push(msg);warns.push(msg);
