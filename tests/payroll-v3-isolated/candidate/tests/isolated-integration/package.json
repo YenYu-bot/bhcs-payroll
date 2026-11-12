@@ -1,0 +1,20 @@
+{
+  "name": "bhcs-payroll-isolated-integration",
+  "version": "1.0.0",
+  "description": "Isolated synthetic Firebase SDK/emulator and blocked-browser validation assets",
+  "scripts": {
+    "test": "./run-sdk.sh",
+    "test:browser-exit": "python3 browser-harness/test_exit_contract.py && ./test-shell-exit.sh",
+    "test:browser": "./run-browser.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@firebase/rules-unit-testing": "3.0.3",
+    "firebase": "10.12.2",
+    "firebase-tools": "13.35.1"
+  },
+  "private": true
+}
