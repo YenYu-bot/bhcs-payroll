@@ -50,4 +50,9 @@ check('actual perfect override floor only needs 1',calc({sick:8},{base:26500},"r
 check('base override no stale floor and blocks wage basis',calc({sick:8},{base:26500},"r.overrides['底薪']=27000;",`[${value('earnings','病假最低工資補足')},c.settlementBlocked]`),[0,true]);
 check('floor pending blocks output',calc({sick:8},{base:26500},"curYM=()=> '2026-11';toast=()=>{};",'[c.settlementBlocked,payrollReadyForOutput()]'),[true,false]);
 check('individual floor acknowledgment unblocks output',calc({sick:8},{base:26500},"curYM=()=> '2026-11';toast=()=>{};const v=computeLive(e,'2026-11',r).reviews.find(x=>x.key==='sickFloor');r.reviews.sickFloor={d:'ok',v:v.sig};",'[c.settlementBlocked,payrollReadyForOutput()]'),[false,true]);
+check('override note identifies actual amount, not extra automatic deduction',calc({sick:8},{base:26500},"r.overrides['全勤獎金']=3000;", "[c.perfectStatus,c.perfectNote.includes('3,000 元實發'),c.perfectNote.includes('不再另扣'),c.reviews.find(x=>x.key==='perfect').label.includes('不另扣薪'),c.net]"),['manual',true,true,true,29009]);
+check('part time unpaid footer shows 15 day half-pay cap',`(()=>{${partSetup}const c=computeLive(e,'2026-11',r);return [leaveText(c).includes('15 日（120 小時）'),leaveText(c).includes('30 日')]})()`,[true,false]);
+check('old snapshot missing cap never invents 30 days',`leaveText({leave:{sickFullDays:.5}}).includes('依當時核定額度')`,true);
+check('floor print reason not deferred annual',calc({sick:8},{base:26500},'',"[payrollBlockReason(c).includes('病假最低工資'),payrollBlockReason(c).includes('特休') ]"),[true,false]);
+check('deferred annual print reason retained',`payrollBlockReason({deferredNeeds:[{}],leavePayrollBlocks:[]})`, '遞延特休原年度工資依據待核對');
 console.log(passed+' leave type and wage synthetic assertions passed');

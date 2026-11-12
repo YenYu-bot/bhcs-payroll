@@ -239,8 +239,10 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
   .view{display:none!important}
   .view#v-slip{display:block!important}
   .slips{gap:0}
+  #toast{display:none!important}
+  .slip:last-child{page-break-after:auto}
   .slip.settlement-blocked>*{display:none!important}
-  .slip.settlement-blocked::before{content:"本薪資單尚缺原年度特休工資依據，未完成核算，不可付款或作正式薪資單。";display:block;font-size:20px;color:#c0392b;padding:32px}
+  .slip.settlement-blocked::before{content:attr(data-block-reason) "。未完成核算，不可付款或作正式薪資單。";white-space:pre-wrap;display:block;font-size:20px;color:#c0392b;padding:32px}
   .slip{page-break-after:always;box-shadow:none;border:1px solid #888;border-radius:0}
   .slip-top{background:#16232e!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .col.ded .li .v,.slip-foot .net{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -1229,6 +1231,10 @@ function computeLive(e,ym,r){
   }
 
   if(reviews.some(x=>x.key==='sickFloor'&&x.st!=='ok')){const msg='病假最低工資補足尚未個別核對，以下僅未完成草稿，不可付款或正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
+  if(ov['全勤獎金']!=null&&ov['全勤獎金']!==''){
+    perfectStatus='manual';perfectNote='全勤已手動覆寫為 '+N(+ov['全勤獎金'])+' 元實發（原自動試算 '+N(perfect)+' 元；不再另扣原試算差額）';
+    const original=reviews.find(x=>x.key==='perfect');if(original){original.label='全勤原自動試算差額（已覆寫，不另扣薪）';original.detail=perfectNote;}
+  }
   const gross=earnings.reduce((s,x)=>s+x[1],0),totalDed=deducts.reduce((s,x)=>s+x[1],0);
   // 年度終結當月：顯示該期期末餘額（結算中）
   const endedHere=!LS.cur?LS.periods.filter(p=>p.tracked&&ymOf(p.end-DAY)===ym).pop():null;
@@ -1240,7 +1246,7 @@ function computeLive(e,ym,r){
   return {leavePayrollBlocks,deferredNeeds,deferredDetails,settlementBlocked:deferredNeeds.length>0||leavePayrollBlocks.length>0,negNotes,hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
     hr,dw:annualDw,payDayWage:dw,wage:wageBase(e),ot:{weekday:ot.weekday,rest:ot.rest,holiday:ot.holiday,offday:ot.offday,pay:ot.pay,count:ot.count,hours:ot.hours,ext:ot.ext},
     typhoon:{days:A.typhoon,h:D2(A.typhoonH),workH:D2(A.typhoonWorkH)},attend:{sched:A.sched,worked:A.worked,workH:D2(A.workH),regH:D2(A.regH+(+r.att.extraHours||0)),holidayWork:A.holidayWork,hasDays:(r.days||[]).length>0},absence,
-    leave:{sick:D2(sickD),men:D2(menD),personal:D2(perD+carePersonalD),carePersonal:D2(carePersonalD),protectedSick:D2(H(ML.protectedSick)),family:D2(famD),paid:D2(paidD),annualH:D2(annualH),sickYear:D2(sickPrior+sickAll),sickFullDays:D2(sickFull)},
+    leave:{sick:D2(sickD),men:D2(menD),sickCap:D2(sickCap),personal:D2(perD+carePersonalD),carePersonal:D2(carePersonalD),protectedSick:D2(H(ML.protectedSick)),family:D2(famD),paid:D2(paidD),annualH:D2(annualH),sickYear:D2(sickPrior+sickAll),sickFullDays:D2(sickFull)},
     late:{paidByPunch:!!L.paidByPunch,needMin:L.needMin,remMin:L.remMin||0,detail:L.detail,totalMin:L.totalMin,count:L.count,grace:L.grace,over:L.over,deduct:lateDeduct,voids:L.voids,offsetDays:L.offsetDays,offsetFallback:L.offsetFallback},
     pensionEr,pr,overridden:ovList,confirmed:!!r.confirmed,locked:false,
     leaveCur:LS.cur?{label:LS.cur.label,start:LS.cur.start,end:LS.cur.end,days:LS.cur.days,carryIn:LS.cur.carryIn,negIn:D2(LS.cur.negIn||0),used:D2(LS.cur.used)}:null};}
@@ -1629,7 +1635,7 @@ function renderAdj(){
   const body=$('adjBody');
   if(!state.employees.length){body.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">請先於步驟 1 建立員工</td></tr>';return;}
   body.innerHTML=state.employees.map(e=>{const m=mrec(e.id),c=compute(e),dis=m.confirmed?' disabled':'';
-    const badge=c.perfectStatus==='void'?'<span class="pill warn">取消</span>':c.perfectStatus==='cut'?'<span class="pill gold">病假比例扣</span>':'<span class="pill ok">發放</span>';
+    const badge=c.perfectStatus==='manual'?'<span class="pill gold">手動覆寫</span>':c.perfectStatus==='void'?'<span class="pill warn">取消</span>':c.perfectStatus==='cut'?'<span class="pill gold">病假比例扣</span>':'<span class="pill ok">發放</span>';
     return `<tr><td>${esc(e.name)}${m.confirmed?' <span class="pill ok">已確認</span>':c.pendingReviews?' <span class="pill gold">待審核 '+c.pendingReviews+'</span>':''}</td>
       <td class="editable"><input class="num" type="number" value="${m.otherBonus||''}"${dis} oninput="setAdj('${e.id}','otherBonus',this.value)"></td>
       <td class="editable"><input class="num" type="number" value="${m.otherDeduct||''}"${dis} oninput="setAdj('${e.id}','otherDeduct',this.value)"></td>
@@ -1647,7 +1653,7 @@ function lateText(c){if(!c.late.count)return '';const L=c.late;const days=L.deta
   return '遲到/早退：'+days+consq;}
 function leaveText(c){const l=c.leave,p=[];if(c.typhoon&&c.typhoon.days)p.push('颱風假 '+c.typhoon.days+' 天');if(c.typhoon&&c.typhoon.workH)p.push('天災停班日出勤 '+c.typhoon.workH+'h');
   if(l.paid)p.push('婚喪公假 '+l.paid+' 日');
-  if(l.sickFullDays)p.push('病假逾年度 30 日 '+l.sickFullDays+' 日不給薪');return p.join(' / ');}
+  if(l.sickFullDays)p.push('病假逾年度半薪額度'+(Number.isFinite(l.sickCap)?' '+D2(l.sickCap)+' 日（'+D2(l.sickCap*HPD)+' 小時）':'（依當時核定額度）')+'：'+l.sickFullDays+' 日不給薪');return p.join(' / ');}
 /* 計時人員：各項目的「時數 × 時薪」 */
 function hourDetail(c,label){const h=c.hoursInfo;if(!h)return '';const R=N(h.rate),o=c.ot||{},f=(x,m)=>x?`${D2(x)}h${m?'×'+m:''}`:'';
   if(label==='工時工資')return `${h.regH}h × ${R}`+(h.extraH?`（含手動調整 ${h.extraH}h）`:'');
@@ -1677,6 +1683,7 @@ function absText(c){if(!c.absence)return '';const a=c.absence,t=c.attend||{};con
 function absPlain(c){if(!c.absence)return '';const a=c.absence,p=[];if(a.pendingH)p.push('待確認 '+a.pendingH+'h');if(a.absentH)p.push('曠職 '+a.absentH+'h');if(a.lateMin)p.push('遲到早退 '+a.lateMin+' 分');
   return (c.attend&&c.attend.hasDays?`應出勤 ${c.attend.sched} 天 / 出勤 ${c.attend.worked} 天　·　`:'')+'缺勤時數 '+a.total+' 小時'+(p.length?'（'+p.join('、')+'）':'');}
 function otText(c){const o=c.ot,p=[];if(o.weekday)p.push('平日 '+D2(o.weekday)+'h');if(o.rest)p.push('休息日 '+D2(o.rest)+'h');if(o.holiday)p.push('國定假日 '+D2(o.holiday)+'h');if(o.offday)p.push('例假 '+D2(o.offday)+'h');return p.join(' / ');}
+function payrollBlockReason(c){const reasons=[];if(c.deferredNeeds?.length)reasons.push('遞延特休原年度工資依據待核對');reasons.push(...(c.leavePayrollBlocks||[]));return reasons.join('；')||'薪資尚有未完成核算項目';}
 function renderSlips(){
   const wrap=$('slips'),stat=$('statRow');
   if(!state.employees.length){wrap.innerHTML='<div class="empty">請先建立員工並填寫出勤。</div>';stat.innerHTML='';return;}
@@ -1690,7 +1697,7 @@ function renderSlips(){
     const ded=visibleRows(c,c.deducts).map(x=>`<div class="li${x[1]?'':' zero'}"><span class="lb">${x[0]}${mark(x[0])}</span>${inp(x[0],x[1],true)}</div>`).join('');
     const notes=[];const lt=lateText(c);if(lt)notes.push(lt);if(c.perfectNote)notes.push('全勤：'+c.perfectNote);if(c.otNote)notes.push('加班費：'+c.otNote);(c.warns||[]).forEach(w=>notes.push('⚠ '+w));c.payNotes.forEach(n=>notes.push('特休未休工資：'+n+'（本期日薪 '+N(c.dw)+'；遞延依原期基準）'));(c.negNotes||[]).forEach(n=>notes.push('特休透支：'+n));
     const cbadge=c.confirmed?'<span class="cbadge yes">✓ 已確認（鎖定）</span>':'<span class="cbadge no">尚未確認</span>';
-    return `<div class="slip${c.confirmed?' done':''}${c.settlementBlocked?' settlement-blocked':''}">
+    return `<div class="slip${c.confirmed?' done':''}${c.settlementBlocked?' settlement-blocked':''}" data-block-reason="${esc(payrollBlockReason(c))}">
       <div class="slip-actions no-print">${cbadge}<span class="grow"></span>
         ${c.locked?'':`<button class="btn ghost tiny" onclick="openOv('${e.id}')">最後確認 / 修改</button>`}
         <button class="btn ${c.confirmed?'ghost':'primary'} tiny" onclick="toggleConfirm('${e.id}')"${!c.confirmed&&c.pendingReviews?' style="opacity:.5" title="尚有待審核項目"':''}>${c.confirmed?'取消確認':(c.pendingReviews?'確認（待審核 '+c.pendingReviews+'）':'確認')}</button></div>

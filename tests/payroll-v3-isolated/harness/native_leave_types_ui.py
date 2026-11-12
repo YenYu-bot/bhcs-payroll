@@ -7,7 +7,7 @@ import argparse, hashlib, json, os, pathlib, socket, threading, traceback, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
-EXPECTED='52086ec4fd1fde1b7e2cde7ed587dbe5c68e42ad1e602427b5426a556349d456'
+EXPECTED='b9a38df8fbe9dcd8b5b107b8500860e395131e06a2f8de7288cc877fd1e5276e'
 def need(value, msg):
  if not value: raise AssertionError(msg)
 
@@ -135,13 +135,13 @@ def main():
       approve_all();confirm_click();need(page.evaluate("mrec('synthetic-review').confirmed"),'protected confirm failed');reload_slip();need(page.evaluate("compute(emp('synthetic-review')).locked"),'protected snapshot not stored')
      elif kind=='floor':
       need(net()==29009 and money('病假最低工資補足')=='99','Q5 floor initial');approve_all();confirm_click();need(not page.evaluate("mrec('synthetic-review').confirmed"),'batch bypassed individual floor ack');blocked_outputs();mark('floor_pending_blocks_all_outputs')
-      page.emulate_media(media='print');need(page.locator('.slip').evaluate("e=>Array.from(e.children).every(x=>getComputedStyle(x).display==='none')"),'floor print leaked payroll fields');page.pdf(path=str(out/'floor-blocked.pdf'),print_background=True);page.emulate_media(media='screen')
+      page.emulate_media(media='print');print_reason=page.locator('.slip').evaluate("e=>getComputedStyle(e,'::before').content");need('病假最低工資' in print_reason and '原年度特休' not in print_reason,'wrong floor print reason');need(page.locator('#toast').evaluate("e=>getComputedStyle(e).display")=='none','toast leaked into print');need(page.locator('.slip').evaluate("e=>Array.from(e.children).every(x=>getComputedStyle(x).display==='none')"),'floor print leaked payroll fields');page.pdf(path=str(out/'floor-blocked.pdf'),print_background=True);page.emulate_media(media='screen')
       review('sickFloor','ok');need(not page.evaluate("compute(emp('synthetic-review')).settlementBlocked"),'individual ack did not unblock');mark('individual_floor_ack')
       step('actual_perfect_override');field=page.locator('input[data-lb="全勤獎金"]');field.fill('3000');field.press('Tab');save_done()
-      need(net()==29009 and money('病假最低工資補足')=='1','override must recompute floor1');need(page.evaluate("compute(emp('synthetic-review')).reviews.find(x=>x.key==='sickFloor').st")=='pending','override did not invalidate floor ack');blocked_outputs();mark('native_override_recalculates_and_invalidates')
+      need(net()==29009 and money('病假最低工資補足')=='1','override must recompute floor1');need(page.evaluate("compute(emp('synthetic-review')).reviews.find(x=>x.key==='sickFloor').st")=='pending','override did not invalidate floor ack');blocked_outputs();need(page.evaluate("compute(emp('synthetic-review')).perfectNote").find('不再另扣')>=0,'override note still misleading');need(page.locator('.rv-tbl').inner_text().find('已覆寫，不另扣薪')>=0,'review label misleading');mark('native_override_recalculates_and_invalidates')
       reload_slip();need(net()==29009 and money('病假最低工資補足')=='1','override lost on IDB reload');review('sickFloor','ok');approve_all();confirm_click();need(page.evaluate("mrec('synthetic-review').confirmed"),'reviewed floor failed confirmation');reload_slip();need(page.evaluate("compute(emp('synthetic-review')).locked"),'floor snapshot lost');mark('floor_confirmation_native_idb')
      elif kind=='menstrual':
-      need(net()==0,'fourth full4h calendar day must be unpaid at exhausted cap');need(not page.evaluate("compute(emp('synthetic-review')).settlementBlocked"),'dated full shifts incorrectly blocked');approve_all();confirm_click();need(page.evaluate("mrec('synthetic-review').confirmed"),'dated menstrual confirm failed');reload_slip();need(net()==0 and page.evaluate("compute(emp('synthetic-review')).locked"),'menstrual snapshot not stored');mark('parttime_fourth_actual_day')
+      need(net()==0,'fourth full4h calendar day must be unpaid at exhausted cap');need(page.evaluate("leaveText(compute(emp('synthetic-review')))").find('15 日（120 小時）')>=0,'wrong parttime cap text');need(not page.evaluate("compute(emp('synthetic-review')).settlementBlocked"),'dated full shifts incorrectly blocked');approve_all();confirm_click();need(page.evaluate("mrec('synthetic-review').confirmed"),'dated menstrual confirm failed');reload_slip();need(net()==0 and page.evaluate("compute(emp('synthetic-review')).locked"),'menstrual snapshot not stored');mark('parttime_fourth_actual_day')
      else:
       need(page.evaluate("compute(emp('synthetic-review')).settlementBlocked"),'undated menstrual guessed');approve_all();confirm_click();need(not page.evaluate("mrec('synthetic-review').confirmed"),'undated menstrual confirmed');blocked_outputs();reload_slip();need(page.evaluate("compute(emp('synthetic-review')).settlementBlocked"),'missing date blocker lost on reload');mark('undated_menstrual_never_guessed')
      need(not errors,'page errors '+repr(errors));need(not dialog_queue,'unconsumed dialogs');page.wait_for_timeout(300);page.screenshot(path=str(out/(kind+'.png')),full_page=True)
