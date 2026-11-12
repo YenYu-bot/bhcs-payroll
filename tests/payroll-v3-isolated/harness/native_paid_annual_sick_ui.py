@@ -112,7 +112,10 @@ def main():
       need(len(downloads)==before and page.evaluate('window.__printEvents.length')==prints,'blocked output side effect')
      def blocked():return page.evaluate("compute(emp('synthetic-review')).settlementBlocked")
      def override(label,value):
-      step('override_'+label+'_'+str(value));field=page.locator('input[data-lb="'+label+'"]');field.fill(str(value));field.press('Tab');save_done()
+      step('override_'+label+'_'+str(value));page.get_by_role('button',name='最後確認 / 修改',exact=True).click()
+      modal=page.locator('#ovModal');expect(modal).to_have_class('overlay on')
+      field=modal.locator('tr').filter(has=page.get_by_text(label,exact=True)).locator('input');field.fill(str(value));field.press('Tab');save_done()
+      modal.locator('button[onclick="closeOv()"]').first.click();expect(modal).not_to_have_class('overlay on')
      if kind=='partial':
       need(blocked(),'partial month erroneously unlocked');approve_all();confirm_click();need(not page.evaluate("mrec('synthetic-review').confirmed"),'partial month confirmed');blocked_outputs();reload_slip();need(blocked(),'partial blocker lost');mark('partial_remains_blocked')
      else:
