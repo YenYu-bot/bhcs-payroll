@@ -1,0 +1,14 @@
+{
+  "name": "bhcs-payroll-indexeddb-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Synthetic IndexedDB transaction tests only",
+  "dependencies": {
+    "fake-indexeddb": "6.2.8"
+  },
+  "scripts": {
+    "test": "node application.cjs",
+    "test:adapter": "node adapter-selftest.cjs",
+    "test:controls": "node runner-controls.cjs"
+  }
+}

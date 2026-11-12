@@ -8,7 +8,7 @@ T="$(cd "$(dirname "$0")" && pwd -P)"
 [ $# -eq 2 ] || { echo "usage: run_all.sh <candidate-root> <new-output-dir>"; exit 2; }
 C="$(cd "$1" && pwd -P)" || exit 2; mkdir "$2" || exit 2; O="$(cd "$2" && pwd -P)"
 RUNNER="${BSDK_RUNNER:-$T/bsdk_runner.py}"
-EXP=3437f75e85fc64c088ea24a7f5e5e2f7d4824d43f7ddcd299e25356b37784e67
+EXP=7fee7b0d9296a0b1f56d12d2007c34a1c740cd70f48bc7c64d5a7342e560b42e
 sha256sum "$C/index.html" | cut -d' ' -f1 > "$O/index-sha-before.txt"
 python3 -I "$T/netpolicy.py" > "$O/netpolicy-selftest.txt" 2>&1; echo $? > "$O/netpolicy-selftest.exit"
 python3 -I "$T/test_supervisor.py" > "$O/supervisor-selftest.txt" 2>&1; echo $? > "$O/supervisor-selftest.exit"

@@ -1,0 +1,57 @@
+name: Payroll calculation phase1 isolated validation
+on:
+  push:
+    branches: [test/payroll-calculation-phase1-20261112]
+    paths: ['tests/payroll-v3-isolated/**', '.github/workflows/payroll-calculation-validation.yml']
+permissions:
+  contents: read
+concurrency:
+  group: payroll-calculation-phase1-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  isolated:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Prepare pinned official dependencies (no app execution)
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="$GITHUB_WORKSPACE/tests/payroll-v3-isolated"
+          mkdir -p "$P/evidence"
+          (cd "$P" && sha256sum -c INPUTS.sha256) | tee "$P/evidence/input-check.txt"
+          python3 -m venv "$RUNNER_TEMP/payroll-venv"
+          "$RUNNER_TEMP/payroll-venv/bin/pip" install 'playwright==1.56.0'
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/payroll-browsers" "$RUNNER_TEMP/payroll-venv/bin/python" -m playwright install --with-deps chromium
+          npm ci --prefix "$P/candidate/tests/indexeddb-integration" --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+          bash "$P/harness/provision.sh" "$P/candidate" | tee "$P/evidence/provision.txt"
+          cp "$P/candidate/tests/isolated-integration/deps-provenance.json" "$P/evidence/"
+      - name: Verify sandbox then run with no external network or inherited credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="$GITHUB_WORKSPACE/tests/payroll-v3-isolated"
+          mkdir -p "$RUNNER_TEMP/payroll-home"
+          # A fresh network namespace has no uplink, no veth and no default route.
+          # Only loopback is brought up. Host networking and security settings are unchanged.
+          sudo unshare --net -- bash -c '
+            set -euo pipefail
+            ip link set lo up
+            exec runuser -u "$1" -- env -i \
+              HOME="$2/payroll-home" \
+              PATH="$2/payroll-venv/bin:$3:/usr/local/bin:/usr/bin:/bin" \
+              PLAYWRIGHT_BROWSERS_PATH="$2/payroll-browsers" \
+              LANG=C.UTF-8 CI=true \
+              bash "$4/ci/isolated_run.sh"
+          ' _ "$(id -un)" "$RUNNER_TEMP" "$(dirname "$(command -v node)")" "$P"
+      - name: Retain synthetic test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payroll-calculation-phase1-${{ github.sha }}
+          path: tests/payroll-v3-isolated/evidence/
+          retention-days: 14
+          if-no-files-found: warn
