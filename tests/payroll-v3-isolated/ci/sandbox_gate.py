@@ -5,11 +5,8 @@ assert os.geteuid() != 0, 'root forbidden'
 assert [name for _, name in socket.if_nameindex()] == ['lo'], 'non-loopback interface present'
 with sync_playwright() as p:
     b = p.chromium.launch(headless=True, chromium_sandbox=True)
-    page = b.new_page(); page.goto('chrome://sandbox')
-    report = page.locator('body').inner_text()
-    print(report, flush=True)
-    assert re.search(r'Namespace sandbox\s+Yes', report), 'namespace sandbox not verified'
-    assert re.search(r'Seccomp-BPF sandbox\s+Yes', report), 'seccomp sandbox not verified'
+    # Headless Shell has no chrome://sandbox WebUI. Verify its own renderer via CDP and /proc instead.
+    page = b.new_page(); page.set_content('<p>isolated sandbox probe</p>')
     session = b.new_browser_cdp_session()
     infos = session.send('SystemInfo.getProcessInfo')['processInfo']
     renderer_pids = [int(i['id']) for i in infos if i['type'] == 'renderer']
@@ -24,6 +21,6 @@ with sync_playwright() as p:
             renderers.append(item)
         except (OSError, KeyError): pass
     print(json.dumps({'uid': os.getuid(), 'browser': b.version, 'renderers': renderers}), flush=True)
-    assert renderers and all(x['seccomp']=='2' and x['nnp']=='1' and not x['noSandbox'] for x in renderers), 'renderer protection missing'
+    assert renderers and all(x['seccomp']=='2' and x['nnp']=='1' and len(x['nspid'].split()) >= 2 and not x['noSandbox'] for x in renderers), 'renderer protection missing'
     b.close()
 print('SANDBOX_GATE_PASS')
