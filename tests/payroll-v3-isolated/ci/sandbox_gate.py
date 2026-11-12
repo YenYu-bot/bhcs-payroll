@@ -15,7 +15,8 @@ with sync_playwright() as p:
     for pid in renderer_pids:
         d = pathlib.Path('/proc') / str(pid)
         try:
-            cmd = (d/'cmdline').read_bytes().split(b'\0')
+            # Chromium rewrites argv into a single space-delimited process title.
+            cmd = (d/'cmdline').read_bytes().replace(b'\0', b' ').split()
             print(json.dumps({'pid': pid, 'uid': d.stat().st_uid, 'cmd': [c.decode(errors='replace') for c in cmd]}), flush=True)
             if b'--type=renderer' not in cmd: continue
             st = dict(line.split(':', 1) for line in (d/'status').read_text().splitlines())
