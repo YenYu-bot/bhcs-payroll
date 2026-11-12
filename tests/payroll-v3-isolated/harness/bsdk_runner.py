@@ -312,7 +312,7 @@ def g1b(env):
 
 @case('G2', 'browser egress negative controls incl. query/host/userinfo spoofing (netpolicy.NEGATIVE) and WebSocket', False, 'guard')
 def g2(env):
-    c = guard(env, 'G2'); p = c.new_page(); p.goto(env.srv.base + '/observer'); n0 = len(env.records)
+    c = guard(env, 'G2', substitute=False); p = c.new_page(); p.goto(env.srv.base + '/observer'); n0 = len(env.records)
     # 'local-forbidden-nested' is resolved by the browser to the allowed /app/ page before routing (not egress); raw form covered by H1.
     urls = {k: u.replace(str(netpolicy.SP), str(env.srv.port)) for k, u in netpolicy.NEGATIVE.items() if k != 'local-forbidden-nested'}
     res = p.evaluate("""async(U)=>{const R={};for(const [k,u] of Object.entries(U)){try{await fetch(u,{mode:'no-cors'});R[k]='reached';}catch(e){R[k]='blocked';}}
