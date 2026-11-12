@@ -3,7 +3,7 @@
 Require non-root, sandboxed Chromium and externally established loopback-only namespace.
 Native print-media/PDF pipeline is tested; not an OS print-dialog automation claim.
 """
-import argparse, hashlib, json, os, pathlib, socket, threading, traceback
+import argparse, hashlib, json, os, pathlib, socket, threading, traceback, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
@@ -68,13 +68,18 @@ def main():
    report['browser']=browser.version;report['renderer_gate']=renderer_gate(browser)
    for kind in ['basis','sources','negative','december']:
     ctx=browser.new_context(service_workers='block',timezone_id='Asia/Taipei',viewport={'width':1440,'height':1100})
-    errors=[];downloads=[];dialog_queue=[];dialogs=[];phase=['setup'];events=[]
+    errors=[];downloads=[];dialog_queue=[];dialogs=[];phase=['setup'];events=[];steps=[];ui_batches=[];step_name=['setup'];started=time.monotonic()
     def route(r):
      u=urlsplit(r.request.url)
      if u.scheme=='http' and u.netloc==urlsplit(origin).netloc and u.path in ('/','/index.html','/favicon.ico'):r.continue_()
      else:report['requests_blocked'].append(r.request.url);r.abort()
-    ctx.route('**/*',route);ctx.add_init_script("window.FB_BASE=location.origin+'/__firebase_forbidden__/';window.__printEvents=[];addEventListener('beforeprint',()=>window.__printEvents.push('before'));addEventListener('afterprint',()=>window.__printEvents.push('after'));")
-    page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.on('download',lambda d:downloads.append(d.suggested_filename))
+    ctx.route('**/*',route);ctx.add_init_script("""window.FB_BASE=location.origin+'/__firebase_forbidden__/';window.__printEvents=[];addEventListener('beforeprint',()=>window.__printEvents.push('before'));addEventListener('afterprint',()=>window.__printEvents.push('after'));
+     window.__testStep='setup';window.__uiEventLog=[];
+     const desc=e=>e?{tag:e.tagName,id:e.id||'',change:e.getAttribute?.('onchange')||'',value:e.value??null,connected:e.isConnected}:null;
+     for(const type of ['input','change','blur','focusout'])document.addEventListener(type,e=>{if(window.__uiEventLog.length<1000)window.__uiEventLog.push({type,step:window.__testStep,ms:performance.now(),trusted:e.isTrusted,target:desc(e.target),active:desc(document.activeElement)});},true);
+     addEventListener('error',e=>window.__uiEventLog.push({type:'window-error',step:window.__testStep,ms:performance.now(),message:e.message,stack:e.error?.stack||'',file:e.filename,line:e.lineno,column:e.colno,active:desc(document.activeElement)}));
+    """)
+    page=ctx.new_page();page.on('pageerror',lambda e:errors.append({'message':str(e),'stack':getattr(e,'stack',None),'step':step_name[0],'elapsed_ms':round((time.monotonic()-started)*1000,3)}));page.on('download',lambda d:downloads.append(d.suggested_filename))
     def dialog(d):
      dialogs.append({'type':d.type,'message':d.message})
      if dialog_queue:
@@ -91,16 +96,24 @@ def main():
      page.locator('#storageSetup input[type=file]').set_input_files({'name':'synthetic.json','mimeType':'application/json','buffer':json.dumps(fixture).encode()});expect(page.locator('#storageSetup')).to_be_hidden()
      month={'basis':'1','sources':'3','negative':'12','december':'12'}[kind]
      def select_slip():
-      page.locator('#pYear').fill('2026');page.locator('#pYear').dispatch_event('change');page.select_option('#pMonth',month);page.locator('.step[data-v="slip"]').click()
-     def save_done():page.evaluate('async()=>{await saveChain;}')
+      page.locator('#pYear').fill('2026');page.locator('#pYear').press('Tab');page.select_option('#pMonth',month);page.locator('.step[data-v="slip"]').click()
+     def save_done():
+      steps.append({'step':step_name[0],'event':'save_wait_begin','elapsed_ms':round((time.monotonic()-started)*1000,3)})
+      page.evaluate('async()=>{await saveChain;}')
+      steps.append({'step':step_name[0],'event':'save_wait_complete','elapsed_ms':round((time.monotonic()-started)*1000,3),'state':page.evaluate("({error:persistence.error?.message||null,confirmed:mrec('synthetic-review').confirmed,annualEvents:mrec('synthetic-review').annualEvents,days:mrec('synthetic-review').days.map(x=>({date:x.date,hours:x.hours}))})")})
      def review(key,decision):page.locator('button[onclick="setReview(\'synthetic-review\',\''+key+'\',\''+decision+'\')"]').click();save_done()
      def approve_all():
       b=page.get_by_role('button',name='全部通過',exact=True)
       if b.count():b.click();save_done()
      def confirm_click():page.locator('button[onclick="toggleConfirm(\'synthetic-review\')"]').click();save_done()
      def money(label):return page.locator('input[data-lb="'+label+'"]').input_value().replace(',','')
-     def reload_slip():page.reload();page.evaluate('async()=>{await storageReady;}');select_slip()
-     def mark(label):events.append(label)
+     def reload_slip():
+      ui_batches.append({'until_step':step_name[0],'reason':'before_native_reload','events':page.evaluate('window.__uiEventLog')})
+      page.reload();page.evaluate('async()=>{await storageReady;}');select_slip()
+     def step(label):
+      step_name[0]=label;page.evaluate('(s)=>{window.__testStep=s}',label);steps.append({'step':label,'event':'begin','elapsed_ms':round((time.monotonic()-started)*1000,3)})
+     def mark(label):
+      events.append(label);steps.append({'step':label,'event':'complete','elapsed_ms':round((time.monotonic()-started)*1000,3),'page_error_count':len(errors)})
      select_slip();phase[0]='test';save_done()
      if kind=='basis':
       need(page.evaluate("compute(emp('synthetic-review')).settlementBlocked"),'missing basis must block')
@@ -131,9 +144,14 @@ def main():
       key='annualSources:2026-03-02';need(page.evaluate("compute(emp('synthetic-review')).annualLeft")==-1,'split whole shift not advanced')
       need(page.evaluate("JSON.parse(compute(emp('synthetic-review')).reviews.find(x=>x.key==='"+key+"').sig).records.map(x=>x[0]).sort().join(',')")=='absence,calendar,manual','three sources not distinguished')
       approve_all();confirm_click();need(not page.evaluate("mrec('synthetic-review').confirmed"),'approveAll bypassed source ack');review(key,'ok');mark('individual_ack_required')
-      page.locator('.step[data-v="att"]').click();page.locator('button[onclick="openDet(\'synthetic-review\',\'annual\')"]').click()
-      page.locator('#detWrap input[onchange="editDet(0,\'hours\',this.value)"]').fill('3');page.locator('#detWrap input[onchange="editDet(0,\'hours\',this.value)"]').dispatch_event('change');page.locator('#detModal button[onclick="closeDet()"]').first.click();save_done()
-      page.locator('button[onclick="openDet(\'synthetic-review\',\'day\')"]').click();page.locator('#detWrap input[onchange="editDet(0,\'hours\',this.value)"]').fill('1');page.locator('#detWrap input[onchange="editDet(0,\'hours\',this.value)"]').dispatch_event('change');page.locator('#detModal button[onclick="closeDet()"]').first.click();save_done();select_slip()
+      step('manual_edit_open');page.locator('.step[data-v="att"]').click();page.locator('button[onclick="openDet(\'synthetic-review\',\'annual\')"]').click();mark('manual_edit_open')
+      step('manual_edit_fill');field=page.locator('#detWrap input[onchange="editDet(0,\'hours\',this.value)"]');field.fill('3');mark('manual_edit_fill')
+      step('manual_edit_natural_tab');field.press('Tab');save_done();mark('manual_edit_natural_tab');need(page.evaluate("window.__uiEventLog.filter(x=>x.step==='manual_edit_natural_tab'&&x.type==='change'&&x.target?.change===\"editDet(0,'hours',this.value)\").length")==1,'manual natural commit must emit exactly one change');need(not errors,'error during natural manual change '+repr(errors))
+      step('manual_edit_close');page.locator('#detModal button[onclick="closeDet()"]').first.click();save_done();mark('manual_edit_close')
+      step('calendar_edit_open');page.locator('button[onclick="openDet(\'synthetic-review\',\'day\')"]').click();mark('calendar_edit_open')
+      step('calendar_edit_fill');field=page.locator('#detWrap input[onchange="editDet(0,\'hours\',this.value)"]');field.fill('1');mark('calendar_edit_fill')
+      step('calendar_edit_natural_mouse_blur');page.locator('#detTitle').click();save_done();mark('calendar_edit_natural_mouse_blur');need(page.evaluate("window.__uiEventLog.filter(x=>x.step==='calendar_edit_natural_mouse_blur'&&x.type==='change'&&x.target?.change===\"editDet(0,'hours',this.value)\").length")==1,'calendar natural commit must emit exactly one change');need(not errors,'error during natural calendar change '+repr(errors))
+      step('calendar_edit_close');page.locator('#detModal button[onclick="closeDet()"]').first.click();save_done();mark('calendar_edit_close');select_slip()
       need(page.evaluate("compute(emp('synthetic-review')).annualLeft")==-1,'same aggregate leave unexpectedly changed')
       need(page.evaluate("compute(emp('synthetic-review')).reviews.find(x=>x.key==='"+key+"').st")=='pending','source changes with unchanged total not invalidated');mark('actual_dom_edit_invalidates_ack')
       review(key,'ok');approve_all();confirm_click();need(page.evaluate("mrec('synthetic-review').confirmed"),'reviewed source did not confirm');reload_slip();need(page.evaluate("compute(emp('synthetic-review')).locked"),'source confirmation not stored');mark('source_ack_confirmed_native_idb')
@@ -143,9 +161,9 @@ def main():
      else:
       need(money('特休未休工資')=='8400','Dec31 own7*1200 must settle, not defer and lose');need(not page.evaluate("compute(emp('synthetic-review')).settlementBlocked"),'no historic carry should not require basis');approve_all();confirm_click();need(page.evaluate("mrec('synthetic-review').confirmed"),'Dec31 confirmation failed');mark('dec31_defer_termination')
      need(not errors,'page errors '+repr(errors));need(not dialog_queue,'unconsumed dialogs');page.wait_for_timeout(300);page.screenshot(path=str(out/(kind+'.png')),full_page=True)
-     report['cases'].append({'case':kind,'result':'PASS','events':events,'dialogs':dialogs,'downloads':downloads})
+     report['cases'].append({'case':kind,'result':'PASS','events':events,'dialogs':dialogs,'downloads':downloads,'steps':steps,'ui_event_batches':ui_batches,'ui_events':page.evaluate('window.__uiEventLog')})
     except Exception:
-     report['cases'].append({'case':kind,'result':'FAIL','error':traceback.format_exc(),'page_errors':errors,'events':events,'dialogs':dialogs})
+     report['cases'].append({'case':kind,'result':'FAIL','error':traceback.format_exc(),'page_errors':errors,'events':events,'dialogs':dialogs,'steps':steps,'ui_event_batches':ui_batches,'ui_events':page.evaluate('window.__uiEventLog')})
      try:page.screenshot(path=str(out/(kind+'-failure.png')),full_page=True)
      except Exception:pass
     finally:ctx.close()
