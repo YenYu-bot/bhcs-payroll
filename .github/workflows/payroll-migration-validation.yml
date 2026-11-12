@@ -1,0 +1,56 @@
+name: Payroll synthetic migration validation
+on:
+  push:
+    branches: [test/payroll-v3-isolated-20261112]
+    paths: ['tests/payroll-migration/**', '.github/workflows/payroll-migration-validation.yml']
+permissions:
+  contents: read
+concurrency:
+  group: payroll-migration-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  chromium-migration:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify inputs and prepare browser only
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="$GITHUB_WORKSPACE/tests/payroll-v3-isolated"
+          M="$GITHUB_WORKSPACE/tests/payroll-migration"
+          mkdir -p "$M/evidence"
+          (cd "$P" && sha256sum -c INPUTS.sha256) | tee "$M/evidence/inputs.txt"
+          (cd "$M" && sha256sum -c MANIFEST.sha256) | tee "$M/evidence/test-inputs.txt"
+          python3 -I "$M/test_migration_contract.py" > "$M/evidence/tool-tests.txt" 2>&1
+          python3 -m venv "$RUNNER_TEMP/payroll-venv"
+          "$RUNNER_TEMP/payroll-venv/bin/pip" install 'playwright==1.56.0'
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/payroll-browsers" "$RUNNER_TEMP/payroll-venv/bin/python" -m playwright install --with-deps chromium
+      - name: Sandboxed browser and synthetic migration without external network
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="$GITHUB_WORKSPACE/tests/payroll-v3-isolated"
+          M="$GITHUB_WORKSPACE/tests/payroll-migration"
+          mkdir -p "$RUNNER_TEMP/payroll-migration-home"
+          sudo unshare --net -- bash -c '
+            set -euo pipefail
+            ip link set lo up
+            exec runuser -u "$1" -- env -i \
+              HOME="$2/payroll-migration-home" \
+              PATH="$2/payroll-venv/bin:/usr/local/bin:/usr/bin:/bin" \
+              PLAYWRIGHT_BROWSERS_PATH="$2/payroll-browsers" \
+              LANG=C.UTF-8 CI=true \
+              bash "$4/isolated_migration.sh" "$3" "$4"
+          ' _ "$(id -un)" "$RUNNER_TEMP" "$P" "$M"
+      - name: Retain only synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payroll-migration-${{ github.sha }}
+          path: tests/payroll-migration/evidence/
+          retention-days: 14
+          if-no-files-found: warn
