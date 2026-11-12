@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import netpolicy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP_SHA = 'ff5399e07c7e023de6db13c3983acec5d991d82de54e25782109851a7ea64782'
+APP_SHA = '52086ec4fd1fde1b7e2cde7ed587dbe5c68e42ad1e602427b5426a556349d456'
 RULES_SHA = '61e211620915fb4e413871e07bf3d1aa6d1462698cadda41f2bcec3df3b62987'
 LOCK_SHA = 'e792ee4171a006155b5b8f7d8597c238e7a650f481f231e73718a99a8c59d246'
 FIXTURE_SHA = '237fde167ea8e6803a1a43aea84af275a59a24d9abdc6d65a9958afa105ae0cd'
