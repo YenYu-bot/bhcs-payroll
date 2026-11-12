@@ -25,3 +25,11 @@ python3 -I "$ROOT/harness/supervise.py" --out "$OUT/ui-supervisor" --timeout 180
 python3 -I "$ROOT/harness/supervise.py" --out "$OUT/leave-ui-supervisor" --timeout 360 -- python3 -I "$ROOT/harness/native_leave_ui.py" --candidate-root "$ROOT/candidate" --output "$OUT/leave-ui" > "$OUT/leave-ui.log" 2>&1
 
 python3 -I "$ROOT/harness/supervise.py" --out "$OUT/leave-types-ui-supervisor" --timeout 420 -- python3 -I "$ROOT/harness/native_leave_types_ui.py" --candidate-root "$ROOT/candidate" --output "$OUT/leave-types-ui" > "$OUT/leave-types-ui.log" 2>&1
+
+# Hourly minutes/rest and partial labor insurance; synthetic-only boundary regressions.
+node "$ROOT/candidate/tests/hourly-boundaries.cjs" | tee "$OUT/hourly-boundaries.txt"
+node "$ROOT/candidate/tests/labor-insurance.cjs" | tee "$OUT/labor-insurance.txt"
+node "$ROOT/candidate/tests/combined-interactions.cjs" | tee "$OUT/combined-interactions.txt"
+
+# Hourly/insurance individual review gates through real DOM and native IndexedDB.
+python3 -I "$ROOT/harness/supervise.py" --out "$OUT/hourly-insurance-ui-supervisor" --timeout 420 -- python3 -I "$ROOT/harness/native_hourly_insurance_ui.py" --candidate-root "$ROOT/candidate" --output "$OUT/hourly-insurance-ui" > "$OUT/hourly-insurance-ui.log" 2>&1

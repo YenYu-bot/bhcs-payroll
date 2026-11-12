@@ -1,0 +1,37 @@
+// Synthetic numerical fixtures. Differential equality is not a legal or calculation-correctness sign-off.
+const fs=require('fs'),vm=require('vm');
+const elements={};const el=id=>elements[id]||=({value:'',checked:false,innerHTML:'',textContent:'',style:{},dataset:{},classList:{add(){},remove(){},contains(){return false},toggle(){}},addEventListener(){},appendChild(){},querySelectorAll(){return []},querySelector(){return null}});
+const doc={getElementById:el,querySelectorAll(){return []},querySelector(){return null},createElement(){return el('anon')},addEventListener(){},body:el('body')};
+let script=fs.readFileSync(process.env.PAYROLL_HTML||require('node:path').join(__dirname,'../index.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+script=script.split('\n').filter(l=>!l.startsWith("if(load()==='locked')")&&!l.startsWith('cloudInit();')).join('\n');
+const context=vm.createContext({document:doc,console,localStorage:{getItem(){return null},setItem(){}},window:{},crypto:require('crypto').webcrypto,TextEncoder,TextDecoder,URL,Blob,setTimeout(){},clearTimeout(){},setInterval(){},clearInterval(){},navigator:{}});
+vm.runInContext(script,context);
+const run=code=>vm.runInContext(code,context);
+run(`function testEmp(p={}){return Object.assign({id:'test',name:'合成測試',payType:'monthly',base:36000,rate:200,hire:'2026-01-01',leave:'',labor:0,health:0,perfect:0,summer:0,otFixed:0,fixedItems:[],pensionWage:0,pensionSelf:0,sched:Object.fromEntries(Array.from({length:7},(_,i)=>['d'+i,{type:i===0?'off':i===6?'rest':'work',start:'09:00',end:'17:00'}])),hourBasis:'punch',hourRound:0,brkMin:0,brkAfter:0,leaveSystem:'cal',yearEnd:'pay',lateePolicy:'deduct',lateGrace:0,lateUnit:0},p)};function runCase(e,r,ym='2026-11'){state.settings=DEF_SETTINGS();state.employees=[e];state.months={[ym]:{[e.id]:r}};const c=computeLive(e,ym,r);return {pr:c.pr,earnings:c.earnings.filter(x=>x[1]),deducts:c.deducts.filter(x=>x[1]),ot:c.ot,attend:c.attend,pensionEr:c.pensionEr,warns:c.warns,reviews:c.reviews}};function workDay(date,h,kind='work'){return {date,wk:wkOf(date),status:'work',kind,wh:h*60,punches:2,in:'09:00',out:'19:00'}}`);
+const assert=require('node:assert/strict');let passed=0;
+function check(name,code,expected){const actual=JSON.parse(JSON.stringify(run(code)));assert.deepEqual(actual,expected,name);passed++;console.log('PASS '+name);}
+
+
+const fixtures=[['01','15','',16],['01','30','',1],['01','31','',1],['02','08','',23],['02','28','',3],['01','01','15',15],['01','01','30',30],['01','01','31',30],['02','01','08',8],['02','01','28',28],['01','05','20',16],['01','20','31',11],['02','03','18',16],['02','18','28',11],['01','30','31',1]];
+for(const [m,start,end,want] of fixtures)check('official-rule fixture (some start dates derived) 115 '+m+'/'+start+'-'+(end||'continuing'),`(()=>{state.settings=DEF_SETTINGS();return employment(testEmp({hire:'2026-${m}-${start}',leave:'${end?'2026-'+m+'-'+end:''}'}),'2026-${m}').laborDays})()`,want);
+check('Jan16 ongoing 15 not calendar16',`(()=>{state.settings=DEF_SETTINGS();return employment(testEmp({hire:'2026-01-16'}),'2026-01').laborDays})()`,15);
+check('Feb16 ongoing15 not calendar13',`(()=>{state.settings=DEF_SETTINGS();return employment(testEmp({hire:'2026-02-16'}),'2026-02').laborDays})()`,15);
+check('Feb16 actual exit28 thirteen',`(()=>{state.settings=DEF_SETTINGS();return employment(testEmp({hire:'2026-02-16',leave:'2026-02-28'}),'2026-02').laborDays})()`,13);
+const setup=`const e=testEmp({hire:'2026-02-16',labor:600,health:500,pensionWage:30000,pensionSelf:6}),r=blankRec();runCase(e,r,'2026-02');`;
+check('labor separated from unverified pension legacy days',`(()=>{${setup}const c=computeLive(e,'2026-02',r);return [c.pr.laborDays,c.pr.insDays,c.deducts.find(x=>x[0]==='勞保費')[1],c.pensionEr]})()`,[15,13,300,780]);
+check('derived rule: full-calendar February exit must still prorate labor',`(()=>{${setup}e.hire='2025-01-01';e.leave='2026-02-28';const c=computeLive(e,'2026-02',r);return [c.pr.partial,c.pr.laborDays,c.deducts.find(x=>x[0]==='勞保費')[1],c.pensionEr]})()`,[false,28,560,1800]);
+check('insurance review date changes invalidate equal net delta',`(()=>{${setup}const v=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='insProrate');r.reviews.insProrate={d:'ok',v:v.sig};e.hire='2026-02-17';return computeLive(e,'2026-02',r).reviews.find(x=>x.key==='insProrate').st})()`,'pending');
+check('employer-only amount change still reviewed',`(()=>{${setup}e.labor=0;e.health=0;e.pensionSelf=0;return computeLive(e,'2026-02',r).reviews.some(x=>x.key==='insProrate')})()`,true);
+check('confirmed snapshot unchanged',`(()=>{${setup}r.confirmed=true;r.snapshot={net:77};const before=JSON.stringify(r);return [compute(e,'2026-02').net,JSON.stringify(r)===before]})()`,[77,true]);
+check('30300 exact separated15 days348+30',`laborParts2026(testEmp({laborGrade:30300,labor:758}),'2026-02',15)`,{ordinary:348,employment:30,total:378});
+check('30300 payroll uses378 not379',`(()=>{${setup}e.laborGrade=30300;e.labor=758;return computeLive(e,'2026-02',r).deducts.find(x=>x[0]==='勞保費')[1]})()`,378);
+check('unknown custom amount blocks even after acknowledgment',`(()=>{${setup}const v=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='laborPrecision');r.reviews.laborPrecision={d:'ok',v:v.sig};return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('known default needs individual acknowledgment',`(()=>{${setup}e.laborGrade=30300;e.labor=758;curYM=()=> '2026-02';save=()=>{};renderSlips=()=>{};toast=()=>{};approveAll(e.id);return [computeLive(e,'2026-02',r).settlementBlocked,payrollReadyForOutput()]})()`,[true,false]);
+check('known default acknowledgment releases block',`(()=>{${setup}e.laborGrade=30300;e.labor=758;const v=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='laborPrecision');r.reviews.laborPrecision={d:'ok',v:v.sig};return computeLive(e,'2026-02',r).settlementBlocked})()`,false);
+check('manual invoice amount and individual acknowledgment release',`(()=>{${setup}r.overrides['勞保費']=288;const v=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='laborPrecision');r.reviews.laborPrecision={d:'ok',v:v.sig};const c=computeLive(e,'2026-02',r);return [c.settlementBlocked,c.deducts.find(x=>x[0]==='勞保費')[1]]})()`,[false,288]);
+check('invoice amount change requires fresh acknowledgment',`(()=>{${setup}r.overrides['勞保費']=288;const v=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='laborPrecision');r.reviews.laborPrecision={d:'ok',v:v.sig};r.overrides['勞保費']=289;return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('2027 rates not guessed',`laborParts2026(testEmp({laborGrade:30300,labor:758}),'2027-02',15)`,null);
+check('overridden grade default not mistaken as standard',`laborParts2026(testEmp({laborGrade:30300,labor:700}),'2026-02',15)`,null);
+check('bulk no cannot restore inaccurate full-month labor',`(()=>{${setup}e.laborGrade=30300;e.labor=758;const v=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='insProrate');r.reviews.insProrate={d:'no',v:v.sig};return computeLive(e,'2026-02',r).deducts.find(x=>x[0]==='勞保費')[1]})()`,378);
+check('negative override blocked even with known grade acknowledged',`(()=>{${setup}e.laborGrade=30300;e.labor=758;r.overrides['勞保費']=-1;const v=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='laborPrecision');r.reviews.laborPrecision={d:'ok',v:v.sig};return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+console.log(passed+' labor insurance assertions passed');

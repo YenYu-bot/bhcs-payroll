@@ -514,7 +514,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
         <div class="f pt-m"><label>底薪（月）*</label><input id="e_base" class="num" type="number" placeholder="0"></div>
         <div class="f pt-h"><label>時薪 *</label><input id="e_rate" class="num" type="number" placeholder="196"></div>
         <div class="f pt-h"><label>計薪工時依據</label><select id="e_hourBasis"><option value="punch">打卡實際工時</option><option value="sched">排班時數（有打卡的日子）</option></select></div>
-        <div class="f pt-h"><label>打卡工時捨去</label><select id="e_hourRound"><option value="0">不捨去（按分鐘）</option><option value="15">每 15 分捨去</option><option value="30">每 30 分捨去</option></select></div>
+        <div class="f pt-h"><label>工時計算（按分鐘，不捨去）</label><select id="e_hourRound" disabled><option value="0">按分鐘計薪</option><option value="15">舊設定 15 分捨去（已停用）</option><option value="30">舊設定 30 分捨去（已停用）</option></select></div>
         <div class="f pt-h"><label>部分工時比例（週平均工時 ÷ 40）</label><input id="e_ptRatio" class="num" type="number" step="0.05" min="0" max="1" placeholder="1"><div class="hint">用於特休日數、有薪病假上限按比例計給</div></div>
         <div class="f"><label>暑期津貼</label><input id="e_summer" class="num" type="number" placeholder="0"></div>
         <div class="f"><label>全勤獎金</label><input id="e_perfect" class="num" type="number" placeholder="0"></div>
@@ -603,7 +603,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
           <div class="f"><label>休息時間扣除（分鐘）</label><input id="e_brkMin" class="num" type="number" min="0" placeholder="0"></div>
           <div class="f"><label>當日工時滿幾小時才扣</label><input id="e_brkAfter" class="num" type="number" min="0" step="0.5" placeholder="例：4"></div>
         </div>
-        <div class="hint" style="font-size:11.5px;color:var(--muted);margin-top:8px"><b>工作日</b>＝有出勤義務；<b>未排班</b>＝兼職人員沒排班的日子（有打卡就照一般工時計薪）；<b>休息日</b>出勤依 §24 計加班費；<b>例假日</b>依 §40 僅限天災、事變或突發事件。全職一般為週六休息日、週日例假日。暑假／寒假時間留空＝沿用平時；上／下班時間留空＝不自動算遲到早退。休息時間扣除適用於打卡與手動輸入的工時。</div>
+        <div class="hint" style="font-size:11.5px;color:var(--muted);margin-top:8px"><b>工作日</b>＝有出勤義務；<b>未排班</b>＝兼職人員沒排班的日子（有打卡就照一般工時計薪）；<b>休息日</b>出勤依 §24 計加班費；<b>例假日</b>依 §40 僅限天災、事變或突發事件。全職一般為週六休息日、週日例假日。暑假／寒假時間留空＝沿用平時；上／下班時間留空＝不自動算遲到早退。休息時間扣除適用於自動打卡工時與排班時數；「計入時數」手動值視為已核定淨工時，不再扣除。僅可扣實際可自由利用的休息；打卡來源若已扣休息，請勿重複扣除。</div>
       </fieldset>
     </div>
     <div class="modal-f">
@@ -876,14 +876,18 @@ function schedSpan(e,wk,date){const g=schedFor(e,wk,date);if(g.start&&g.end){con
 // 整日預支按當日正常班別，不以輸入來源或固定八小時猜測。
 function annualShiftHours(e,date){if(pd(date)==null)return null;const g=schedFor(e,wkOf(date),date),span=schedSpan(e,wkOf(date),date);if(g.type!=='work'||span==null)return null;let m=span*60;if(+e.brkMin>0&&m>=(+e.brkAfter||0)*60)m=Math.max(0,m-(+e.brkMin));return m>0?Math.min(HPD,m/60):null;}
 function annualIsFull(e,date,hours){const h=annualShiftHours(e,date);return h!=null&&(+hours||0)>=h-1e-9;}
+// 僅扣實際可自由利用且來源尚未扣除的休息；每月核對，不自行推定打卡 WH 的語意。
+function netWorkMinutes(e,minutes){let m=Math.max(0,+minutes||0);if(+e.brkMin>0&&m>=(+e.brkAfter||0)*60)m=Math.max(0,m-(+e.brkMin));return m;}
+function scheduledPaidHours(e,wk,date){const s=schedSpan(e,wk,date);return s==null?null:netWorkMinutes(e,s*60)/60;}
 function workedH(e,d){if(d.hours!=null&&d.hours!=='')return +d.hours;
-  if(e.hourBasis==='sched'&&(d.punches||0)>=2){const s=schedSpan(e,d.wk,d.date);if(s!=null)return s;}
-  const step=+e.hourRound||0;let m=+d.wh||0;if(+e.brkMin>0&&m>=(+e.brkAfter||0)*60)m=Math.max(0,m-(+e.brkMin));return (step>0?Math.floor(m/step)*step:m)/60;}
+  if(e.hourBasis==='sched'&&(d.punches||0)>=2){const s=scheduledPaidHours(e,d.wk,d.date);if(s!=null)return s;}
+  // 不得捨去已工作分鐘；舊 hourRound 原值保留供審核，不再作減薪運算。
+  return netWorkMinutes(e,d.wh)/60;}
 function dayAgg(e,r){
   const A={sched:0,worked:0,regH:0,workH:0,ot:[],leaveH:{sick:0,menstrual:0,personal:0,family:0,carePersonal:0,protectedSick:0,paidLeave:0,annual:0},holidayH:0,offH:0,pendingH:0,absentH:0,pending:0,absent:0,missing:0,holidayWork:0,offWork:0,typhoon:0,typhoonH:0,typhoonWorkH:0,annualItems:[],schedH:0};
   const days=r.days||[];const hrly=isHourly(e);
   const avg={};days.forEach(d=>{if((d.status||'work')==='work'){const g=wkGroup(d.wk);(avg[g]=avg[g]||[]).push(workedH(e,d));}});
-  const fb=d=>{if(d.hours!=null&&d.hours!=='')return +d.hours;if(!hrly)return HPD;const s=schedSpan(e,d.wk,d.date);if(s!=null)return s;const a=avg[wkGroup(d.wk)];return a&&a.length?a.reduce((x,y)=>x+y,0)/a.length:0;};
+  const fb=d=>{if(d.hours!=null&&d.hours!=='')return +d.hours;if(!hrly)return HPD;const s=scheduledPaidHours(e,d.wk,d.date);if(s!=null)return s;const a=avg[wkGroup(d.wk)];return a&&a.length?a.reduce((x,y)=>x+y,0)/a.length:0;};
   const sd=new Set(),wd=new Set();
   const hhOff=hrly&&state.settings.hourlyHolidayOff!==false;
   days.forEach(d=>{const st=d.status||'work';if(st==='notScheduled'||(hhOff&&st==='holiday'))return;sd.add(d.date);
@@ -922,8 +926,11 @@ function otSummary(e,r,A){const hr=hourly(e),hm=isHourly(e);const s={weekday:0,r
 
 
 /* ===== 在職 / 破月 / 投保日數 ===== */
+// 僅2026一般受僱且勞保＋就保均適用的級距預設值可推算；其他情形核帳單。
+function laborParts2026(e,ym,days){const row=LABOR.find(x=>x[0]===+e.laborGrade);if(!String(ym).startsWith('2026-')||!row||+e.labor!==row[1])return null;
+  const ordinary=Math.round(row[0]*115*2*days/300000),employment=Math.round(row[0]*10*2*days/300000);return {ordinary,employment,total:ordinary+employment};}
 function employment(e,ym){const R=ymRange(ym),last=R.end-DAY,h=pd(e.hire),l=pd(e.leave);
-  const no={employed:false,inDays:0,monthDays:R.days,partial:true,factor:0,insDays:0,healthFull:false,leavesThisMonth:false};
+  const no={employed:false,inDays:0,monthDays:R.days,partial:true,factor:0,insDays:0,laborDays:0,healthFull:false,leavesThisMonth:false};
   if(h!=null&&h>last)return no;if(l!=null&&l<R.start)return no;
   const s=(h!=null&&h>R.start)?h:R.start,en=(l!=null&&l<last)?l:last;
   const startDay=new Date(s).getUTCDate(),endDay=new Date(en).getUTCDate();
@@ -931,7 +938,8 @@ function employment(e,ym){const R=ymRange(ym),last=R.end-DAY,h=pd(e.hire),l=pd(e
   const baseDays=state.settings.prorateBase==='30'?30:R.days;
   return {employed:true,inDays,monthDays:R.days,partial,baseDays,startDay,endDay,
     factor:partial?Math.min(1,inDays/baseDays):1,
-    insDays:partial?Math.min(30,inDays):30,          // 勞保／勞退：每月以 30 日計
+    insDays:partial?Math.min(30,inDays):30,          // 舊勞退估算暫保留；未套用勞保規則
+    laborDays:Math.max(0,(l!=null&&l<=last?Math.min(30,endDay):30)-Math.min(30,startDay)+1), // 勞保：續保至月底以30，實際退保止日最高30
     healthFull:!(l!=null&&l<last),                      // 健保：月底在保收全月
     leavesThisMonth:l!=null&&l>=R.start&&l<=last};}
 
@@ -1078,6 +1086,10 @@ function computeLive(e,ym,r){
   const rv=r.reviews||{},reviews=[];
   const decide=(key,label,detail,amt,sig,ack)=>{if(!amt&&!sig)return 'none';sig=sig||String(Math.round(amt));const x=rv[key];const st=x&&x.v===sig&&(!ack||x.d==='ok')?x.d:'pending';
     reviews.push({key,label,detail,amt:Math.round(amt||0),sig,st,ack:!!ack});return st;};
+  const autoDays=(r.days||[]).filter(d=>d.hours==null||d.hours==='').filter(d=>(d.status||'work')!=='notScheduled');
+  const hourlyCheck=autoDays.length&&(+e.hourRound>0||+e.brkMin>0||e.hourBasis==='sched');
+  if(hourlyCheck){const detail='自動工時按分鐘，不捨去已工作分鐘。'+(+e.hourRound>0?'舊工時捨去設定已停用。':'')+(+e.brkMin>0?'已依設定扣休息 '+e.brkMin+' 分；請逐日確認確實可自由利用，且打卡 WH 尚未扣過休息；不符請改休息設定或填入核實的淨「計入時數」。':'')+(e.hourBasis==='sched'?'排班是計薪依據，不代表實際出勤；若實際工作較長，須核實補登，不能只按較短排班支付。':'');
+    warns.push(detail);decide('workMinutes','核對計薪工時與休息',detail,0,JSON.stringify({v:1,ym,rate:e.rate,base:e.base,hourBasis:e.hourBasis,hourRound:e.hourRound,brkMin:e.brkMin,brkAfter:e.brkAfter,sched:e.sched,seasons:state.settings.seasons,days:r.days}),true);}
   const ordinarySickD=H(ML.ordinarySick),carePersonalD=H(ML.carePersonal);
   const sickD=H(ML.sick),menD=H(ML.menstrual),famD=H(ML.family),paidD=H(ML.paidLeave);
   const annualDates=new Map();r.annualEvents.map(x=>({...x,source:'manual'})).concat(A.annualItems).forEach(x=>{const t=pd(x.date);if(t==null)return;const a=annualDates.get(t)||{hours:0,sources:new Set(),records:[]};a.hours+=+x.hours||0;a.sources.add(x.source);a.records.push([x.source,+x.hours||0]);annualDates.set(t,a);});
@@ -1167,10 +1179,15 @@ function computeLive(e,ym,r){
   // 勞健保、勞退
   const pw=(+e.pensionWage>0)?+e.pensionWage:(isNaN(+e.laborGrade)?0:+e.laborGrade);
   let labor=+e.labor||0,health=+e.health||0,pensionSelf=Math.round(pw*(+e.pensionSelf||0)/100),pensionEr=Math.round(pw*0.06);
+  const laborReviewNeeded=pr.employed&&e.insAuto!==false&&pr.laborDays!==30&&labor>0,laborParts=laborReviewNeeded?laborParts2026(e,ym,pr.laborDays):null;
+  const laborManual=r.overrides&&r.overrides['勞保費'],laborManualValid=laborManual!=null&&laborManual!==''&&Number.isFinite(+laborManual)&&+laborManual>=0;
   if(!pr.employed){labor=health=pensionSelf=pensionEr=0;}
-  else if(e.insAuto!==false&&pr.partial){const F={labor,health,pensionSelf,pensionEr},f=pr.insDays/30;labor=Math.round(labor*f);pensionSelf=Math.round(pensionSelf*f);pensionEr=Math.round(pensionEr*f);if(!pr.healthFull)health=0;
+  else if(e.insAuto!==false&&(pr.partial||pr.laborDays!==30)){const F={labor,health,pensionSelf,pensionEr},f=pr.insDays/30;labor=laborParts?laborParts.total:Math.round(labor*pr.laborDays/30);pensionSelf=Math.round(pensionSelf*f);pensionEr=Math.round(pensionEr*f);if(!pr.healthFull)health=0;
     const dl=(F.labor-labor)+(F.health-health)+(F.pensionSelf-pensionSelf);
-    if(dl&&decide('insProrate','破月勞健保／勞退調整',`勞保 ${N(F.labor)}→${N(labor)}、健保 ${N(F.health)}→${N(health)}${F.pensionSelf?`、勞退自提 ${N(F.pensionSelf)}→${N(pensionSelf)}`:''}（投保 ${pr.insDays} 日${pr.healthFull?'':'，月中離職健保不收'}）`,dl)==='no')({labor,health,pensionSelf,pensionEr}=F);}
+    const sig=JSON.stringify({v:2,ym,hire:e.hire,leave:e.leave,laborDays:pr.laborDays,pensionDays:pr.insDays,healthFull:pr.healthFull,F,labor,health,pensionSelf,pensionEr});
+    if((dl||F.pensionEr!==pensionEr)&&decide('insProrate','勞健保／勞退分項調整',`勞保 ${N(F.labor)}→${N(labor)}（${pr.laborDays} 日）、健保 ${N(F.health)}→${N(health)}${F.pensionSelf?`、勞退自提 ${N(F.pensionSelf)}→${N(pensionSelf)}`:''}、雇主勞退 ${N(F.pensionEr)}→${N(pensionEr)}（勞退暫按原估算 ${pr.insDays} 日；須另核帳單，不代表已驗證勞退邊界）${pr.healthFull?'；健保月底在保':'；月中離職健保不收'}${laborReviewNeeded?'；本項不採用只恢復健保／勞退，勞保另於分項核對及本月覆寫處理。':''}`,dl,sig)==='no'){({health,pensionSelf,pensionEr}=F);if(!laborReviewNeeded)labor=F.labor;}}
+  if(laborReviewNeeded){const detail=laborParts?`2026一般受僱預設：勞保 ${laborParts.ordinary}＋就保 ${laborParts.employment}＝${laborParts.total} 元，分項四捨五入。請核對本人同時適用勞保及就保、無補助，且到離職等於實際加退保日；不符請依帳單覆寫本月勞保費。`:'自訂保費、級距覆寫或非2026年度，不能從全月合計反推正確分項；請依當月帳單覆寫「勞保費」，再個別核對。';
+    decide('laborPrecision','核對破月勞保與就保分項',detail+(laborManualValid?' 本月已覆寫 '+laborManual+' 元。':''),0,JSON.stringify({v:1,ym,hire:e.hire,leave:e.leave,grade:e.laborGrade,full:e.labor,days:pr.laborDays,laborParts,manual:laborManual}),true);}
   let baseAmt=(pr.employed&&!hrly)?Math.round((+e.base||0)*pr.factor):0,summerAmt=pr.employed?Math.round((+e.summer||0)*pr.factor):0;
   // 自訂薪資項目：員工固定加減項（加項隨破月比例）＋本月加減項
   const used=new Set([...EARN,...DED]),uq=n=>{n=String(n||'').trim()||'自訂項目';let k=n,i=2;while(used.has(k))k=n+'（'+(i++)+'）';used.add(k);return k;};
@@ -1230,6 +1247,8 @@ function computeLive(e,ym,r){
     const msg='已覆寫底薪／固定加項，但請假與加班日薪基準尚未另外核對；請改正員工工資設定或移除該覆寫後再確認。';leavePayrollBlocks.push(msg);warns.push(msg);
   }
 
+  if(laborReviewNeeded&&((laborManual!=null&&laborManual!==''&&!laborManualValid)||!laborParts&&!laborManualValid||reviews.some(x=>x.key==='laborPrecision'&&x.st!=='ok'))){const msg='破月勞保／就保尚未核對分項或帳單，以下僅草稿，不可正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
+  if(reviews.some(x=>x.key==='workMinutes'&&x.st!=='ok')){const msg='計薪工時與實際休息尚未個別核對，以下僅未完成草稿，不可付款或正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
   if(reviews.some(x=>x.key==='sickFloor'&&x.st!=='ok')){const msg='病假最低工資補足尚未個別核對，以下僅未完成草稿，不可付款或正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
   if(ov['全勤獎金']!=null&&ov['全勤獎金']!==''){
     perfectStatus='manual';perfectNote='全勤已手動覆寫為 '+N(+ov['全勤獎金'])+' 元實發（原自動試算 '+N(perfect)+' 元；不再另扣原試算差額）';
@@ -1598,7 +1617,7 @@ function renderDay(){
   $('detWrap').innerHTML=(arr.length?`<div style="max-height:52vh;overflow:auto"><table class="late-tbl"><thead><tr><th>日期</th><th>上班–下班</th><th>類型</th><th>狀態</th><th>計入時數</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     :'<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">本月尚無應出勤日。匯入打卡 .xlsx 會自動建立，也可在下方逐日新增。</p>')
     +(lock?'':`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn ghost sm" onclick="genDays()">依排班產生本月應出勤日</button><button class="btn ghost sm" onclick="fillAllPending()">待確認日以排班時間登錄出勤</button></div>`)
-    +`<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">可直接輸入上下班時間計算工時（⟲ 帶入排班時間）。${+e.brkMin?'工時滿 '+(+e.brkAfter||0)+' 小時扣休息 '+e.brkMin+' 分。':''}「計入時數」留空＝自動（淡字）：出勤日依${e.hourBasis==='sched'?'排班時數':'打卡工時'}${+e.hourRound?'（每 '+e.hourRound+' 分捨去）':''}；請假等非出勤日${hrly?'依排班時數，未設定則取同類日平均':'每日 8 小時'}。</p>`;
+    +`<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">可直接輸入上下班時間計算工時（⟲ 帶入排班時間）。${+e.brkMin?'工時滿 '+(+e.brkAfter||0)+' 小時扣休息 '+e.brkMin+' 分。':''}「計入時數」留空＝自動（淡字）：出勤日依${e.hourBasis==='sched'?'排班時數':'打卡工時'}（按分鐘，不捨去）；請假等非出勤日${hrly?'依排班時數，未設定則取同類日平均':'每日 8 小時'}。</p>`;
   const R=ymRange(curYM());
   $('detAdd').innerHTML=lock?'':`<div class="f" style="min-width:140px"><label>日期</label><input id="d_date" type="date" min="${fd(R.start)}" max="${fd(R.end-DAY)}"></div>
     <div class="f"><label>類型</label><select id="d_kind">${opt(DKIND,'work')}</select></div><div class="f"><label>狀態</label><select id="d_st">${opt(DST,'work')}</select></div>
@@ -1721,7 +1740,7 @@ function renderSlips(){
         ${leaveText(c)?`<span>${leaveText(c)}</span>`:''}
         <span>時薪 <b>${N(c.hr)}</b>${c.payType==='hourly'?'':` / 本月日薪 <b>${N(c.payDayWage??c.dw)}</b>`}</span>
         ${c.pensionEr?`<span>雇主提繳勞退 <b>${N(c.pensionEr)}</b></span>`:''}
-        ${c.pr.partial&&c.pr.employed?`<span style="color:var(--gold)">破月：在職 <b>${c.pr.inDays}</b> / ${c.pr.monthDays} 日（底薪比例 ${c.pr.factor.toFixed(3)}，勞保投保 ${c.pr.insDays} 日${c.pr.healthFull?'':'，健保當月不收'}）</span>`:''}
+        ${c.pr.partial&&c.pr.employed?`<span style="color:var(--gold)">破月：在職 <b>${c.pr.inDays}</b> / ${c.pr.monthDays} 日（底薪比例 ${c.pr.factor.toFixed(3)}，勞保投保 ${c.pr.laborDays??c.pr.insDays} 日${c.pr.healthFull?'':'，健保當月不收'}）</span>`:''}
       </div>${notes.length?'<div class="slip-late">'+notes.map(esc).join('<br>')+'</div>':''}
     </div>`;}).join('');
   stat.innerHTML=`<div class="stat"><div class="k">員工人數</div><div class="v">${state.employees.length}</div></div>

@@ -1,0 +1,24 @@
+// Synthetic numerical fixtures. Differential equality is not a legal or calculation-correctness sign-off.
+const fs=require('fs'),vm=require('vm');
+const elements={};const el=id=>elements[id]||=({value:'',checked:false,innerHTML:'',textContent:'',style:{},dataset:{},classList:{add(){},remove(){},contains(){return false},toggle(){}},addEventListener(){},appendChild(){},querySelectorAll(){return []},querySelector(){return null}});
+const doc={getElementById:el,querySelectorAll(){return []},querySelector(){return null},createElement(){return el('anon')},addEventListener(){},body:el('body')};
+let script=fs.readFileSync(process.env.PAYROLL_HTML||require('node:path').join(__dirname,'../index.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+script=script.split('\n').filter(l=>!l.startsWith("if(load()==='locked')")&&!l.startsWith('cloudInit();')).join('\n');
+const context=vm.createContext({document:doc,console,localStorage:{getItem(){return null},setItem(){}},window:{},crypto:require('crypto').webcrypto,TextEncoder,TextDecoder,URL,Blob,setTimeout(){},clearTimeout(){},setInterval(){},clearInterval(){},navigator:{}});
+vm.runInContext(script,context);
+const run=code=>vm.runInContext(code,context);
+run(`function testEmp(p={}){return Object.assign({id:'test',name:'合成測試',payType:'monthly',base:36000,rate:200,hire:'2026-01-01',leave:'',labor:0,health:0,perfect:0,summer:0,otFixed:0,fixedItems:[],pensionWage:0,pensionSelf:0,sched:Object.fromEntries(Array.from({length:7},(_,i)=>['d'+i,{type:i===0?'off':i===6?'rest':'work',start:'09:00',end:'17:00'}])),hourBasis:'punch',hourRound:0,brkMin:0,brkAfter:0,leaveSystem:'cal',yearEnd:'pay',lateePolicy:'deduct',lateGrace:0,lateUnit:0},p)};function runCase(e,r,ym='2026-11'){state.settings=DEF_SETTINGS();state.employees=[e];state.months={[ym]:{[e.id]:r}};const c=computeLive(e,ym,r);return {pr:c.pr,earnings:c.earnings.filter(x=>x[1]),deducts:c.deducts.filter(x=>x[1]),ot:c.ot,attend:c.attend,pensionEr:c.pensionEr,warns:c.warns,reviews:c.reviews}};function workDay(date,h,kind='work'){return {date,wk:wkOf(date),status:'work',kind,wh:h*60,punches:2,in:'09:00',out:'19:00'}}`);
+const assert=require('node:assert/strict');let passed=0;
+function check(name,code,expected){const actual=JSON.parse(JSON.stringify(run(code)));assert.deepEqual(actual,expected,name);passed++;console.log('PASS '+name);}
+
+
+
+const setup=`const e=testEmp({payType:'hourly',rate:200,hourBasis:'sched',hourRound:30,brkMin:60,brkAfter:4,hire:'2026-02-16',labor:600,health:500,pensionWage:30000,pensionSelf:6}),r=blankRec();e.sched.d1.end='18:00';r.days=[workDay('2026-02-16',9)];runCase(e,r,'2026-02');curYM=()=> '2026-02';toast=()=>{};save=()=>{};renderSlips=()=>{};`;
+check('combined work and insurance values remain independent',`(()=>{${setup}const c=computeLive(e,'2026-02',r);return [c.pr.laborDays,c.pr.insDays,c.earnings.find(x=>x[0]==='工時工資')[1],c.deducts.find(x=>x[0]==='勞保費')[1],c.ot.pay]})()`,[15,13,1600,300,0]);
+check('insurance batch approval cannot approve work minutes',`(()=>{${setup}approveAll(e.id);const c=computeLive(e,'2026-02',r);return [c.reviews.find(x=>x.key==='insProrate').st,c.reviews.find(x=>x.key==='workMinutes').st,c.settlementBlocked,payrollReadyForOutput()]})()`,['ok','pending',true,false]);
+check('combined snapshot immutable despite both changes',`(()=>{${setup}r.confirmed=true;r.snapshot={net:88,pr:{insDays:13}};const before=JSON.stringify(r);e.brkMin=30;e.hire='2026-02-17';return [compute(e,'2026-02').net,JSON.stringify(r)===before]})()`,[88,true]);
+check('work acknowledgment cannot bypass unknown labor bill',`(()=>{${setup}let c=computeLive(e,'2026-02',r);for(const key of ['workMinutes','laborPrecision']){const v=c.reviews.find(x=>x.key===key);r.reviews[key]={d:'ok',v:v.sig};}return [computeLive(e,'2026-02',r).settlementBlocked,payrollReadyForOutput()]})()`,[true,false]);
+check('bill override still requires fresh labor acknowledgment',`(()=>{${setup}r.overrides['勞保費']=378;let c=computeLive(e,'2026-02',r);let v=c.reviews.find(x=>x.key==='workMinutes');r.reviews.workMinutes={d:'ok',v:v.sig};return [computeLive(e,'2026-02',r).settlementBlocked,payrollReadyForOutput()]})()`,[true,false]);
+check('both individual acknowledgments and bill release output',`(()=>{${setup}r.overrides['勞保費']=378;let c=computeLive(e,'2026-02',r);for(const key of ['workMinutes','laborPrecision']){const v=c.reviews.find(x=>x.key===key);r.reviews[key]={d:'ok',v:v.sig};}return [computeLive(e,'2026-02',r).settlementBlocked,payrollReadyForOutput()]})()`,[false,true]);
+check('known standard grade accurate alongside corrected work hours',`(()=>{${setup}e.laborGrade=30300;e.labor=758;const c=computeLive(e,'2026-02',r);return [c.earnings.find(x=>x[0]==='工時工資')[1],c.deducts.find(x=>x[0]==='勞保費')[1],c.settlementBlocked]})()`,[1600,378,true]);
+console.log(passed+' combined interaction assertions passed');
