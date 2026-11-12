@@ -34,7 +34,8 @@ def state_on_disk(p):
     r=root(p); need(r is not None,'root absent')
     return json.loads(r['values']['bhcs_payroll_device_test_v3'])
 def page(env,ctx):
-    p=env.h.app_page(ctx,env.srv.base)
+    p=ctx.new_page();p.goto(env.srv.base+"/app/",wait_until="domcontentloaded")
+    wait(p,"typeof cloud!=='undefined' && typeof load==='function'")
     wait(p,'localDB.db!==null || localDB.failed!==null')
     need(p.evaluate('localDB.failed===null'),'storage open failed')
     return p
@@ -175,9 +176,9 @@ def narrow_encrypted_roundtrip(env):
     need(p.evaluate('sec.locked'),'encrypted startup did not lock')
     p.fill('#lockPass',PW);p.click('#lockUnlock');wait(p,'!sec.locked && persistence.operations===0',timeout=60000)
     need(p.evaluate('state.months')==env.fixture['months'],'encrypted import changed snapshots')
-    with p.expect_download() as wait:
+    with p.expect_download() as download_wait:
         p.evaluate('exportData()')
-    download=wait.value;body=json.loads(Path(download.path()).read_text())
+    download=download_wait.value;body=json.loads(Path(download.path()).read_text())
     need(body.get('bhcsEnc')==1,'export not encrypted')
     decoded=json.loads(p.evaluate('(a)=>__bsdk.decrypt(...a)',[body,PW,body['salt']]))
     need(decoded['months']==env.fixture['months'] and decoded['employees']==env.fixture['employees'],'export core mismatch')
