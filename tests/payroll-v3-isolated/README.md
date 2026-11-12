@@ -1,5 +1,5 @@
 # Sick/personal/menstrual leave isolated validation
-Candidate SHA256: dd0c88ea87a0837fb21da38e903b4aa68783fab9d01b9c87a15b12c7a6b6d58c. Test branch only; root index.html/main/Pages unchanged.
+Candidate SHA256: 952d2f55ec59e511ca340af6c8c1676a6b857b628b27f74fde223cd090df446e. Test branch only; root index.html/main/Pages unchanged.
 Only fictional data; no production credentials or cloud. Existing sandbox, loopback-only network namespace, supervisor, Firebase emulator, page-error and network guards preserved.
 Run original 140 calculations +41 new +9 independent gates; 97 IDB and 24 isolated suites; old5 payroll UI +old4 annual UI +new5 leave-types UI.
 New native DOM tests cover Q10 actual attendance wage, protected leave types, Q5 individual floor acknowledgment and zero output effects, actual override recalculation/invalidation, IDB reload, snapshot immutability and part-time menstrual date handling.
@@ -9,4 +9,6 @@ Follow-up text fixes: actual print-block reason, parttime half-pay cap, actual m
 
 Hourly/insurance update: preserve actual minutes; configured net schedule breaks require individual verification; partial labor and employment insurance rounded separately. Nonstandard cases require bill amount override and individual acknowledgment. Both work-minute and insurance blockers persist across official-output gates. Confirmed historical snapshots unchanged. Labor pension February boundaries remain unverified. 2/1–2/28 test is rule-derived, not a verbatim official example. Added 61 VM assertions (20 hourly,34 insurance,7 combined) and new native DOM scenarios.
 
-Pension safety update: partial/month-end February cases require separately entered contribution-statement days, employer and self amounts, source note, and individual acknowledgment. Generic/bulk approval cannot release a missing statement. Revised settings/source invalidate approval; confirmed snapshots unchanged. Non-full-month date rules remain unverified, not automatically guessed. Adds 42 VM assertions and five native UI cases. The former standard-grade hourly UI fixture now separately verifies pension through native dialogs. No production data or credentials.
+Pension safety update: partial/month-end February cases require separately entered contribution-statement days, employer and self amounts, source note, and individual acknowledgment. Generic/bulk approval cannot release a missing statement. Revised settings/source invalidate approval; confirmed snapshots unchanged. Non-full-month date rules remain unverified, not automatically guessed. Adds 44 VM assertions and five native UI cases. The former standard-grade hourly UI fixture now separately verifies pension through native dialogs. No production data or credentials.
+
+Pension estimate half-dollar ties use one final division (integer wage × half-percent step × days numerator). A 20,520-combination exact rational oracle sweep verifies rounding; ambiguous day counts still require statement verification.

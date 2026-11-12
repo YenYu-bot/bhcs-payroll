@@ -1198,12 +1198,12 @@ function computeLive(e,ym,r){
   if(annualPay&&decide('annualPay','特休未休工資',payNotes.join('；')+`（日薪 ${N(annualDw)}）`,annualPay,JSON.stringify({payDays,annualDw,deferredDetails}))==='no'){annualPay=0;payNotes.push('審核不採用，未發給');}
   // 勞健保、勞退
   const pw=(+e.pensionWage>0)?+e.pensionWage:(isNaN(+e.laborGrade)?0:+e.laborGrade);
-  let labor=+e.labor||0,health=+e.health||0,pensionSelf=Math.round(pw*(+e.pensionSelf||0)/100),pensionEr=Math.round(pw*0.06);
+  let labor=+e.labor||0,health=+e.health||0,pensionSelf=Math.round(pw*(+e.pensionSelf||0)/100),pensionEr=Math.round(pw*6/100);
   const pensionReviewNeeded=pr.employed&&(pr.partial||(pr.monthDays<30&&pr.leavesThisMonth)||!!r.pensionBasis)&&(pw>0||+e.pensionSelf>0||!!r.pensionBasis),pensionBasis=pensionReviewNeeded?resolvePensionBasis(e,ym,r):{ok:false};
   const laborReviewNeeded=pr.employed&&e.insAuto!==false&&pr.laborDays!==30&&labor>0,laborParts=laborReviewNeeded?laborParts2026(e,ym,pr.laborDays):null;
   const laborManual=r.overrides&&r.overrides['勞保費'],laborManualValid=laborManual!=null&&laborManual!==''&&Number.isFinite(+laborManual)&&+laborManual>=0;
   if(!pr.employed){labor=health=pensionSelf=pensionEr=0;}
-  else if(e.insAuto!==false&&(pr.partial||pr.laborDays!==30)){const F={labor,health,pensionSelf,pensionEr},f=pr.insDays/30;labor=laborParts?laborParts.total:Math.round(labor*pr.laborDays/30);pensionSelf=Math.round(pw*(+e.pensionSelf||0)/100*f);pensionEr=Math.round(pw*0.06*f);if(!pr.healthFull)health=0;
+  else if(e.insAuto!==false&&(pr.partial||pr.laborDays!==30)){const F={labor,health,pensionSelf,pensionEr};labor=laborParts?laborParts.total:Math.round(labor*pr.laborDays/30);pensionSelf=Math.round(pw*(+e.pensionSelf||0)*pr.insDays/3000);pensionEr=Math.round(pw*6*pr.insDays/3000);if(!pr.healthFull)health=0;
     const dl=(F.labor-labor)+(F.health-health)+(F.pensionSelf-pensionSelf);
     const sig=JSON.stringify({v:2,ym,hire:e.hire,leave:e.leave,laborDays:pr.laborDays,pensionDays:pr.insDays,healthFull:pr.healthFull,F,labor,health,pensionSelf,pensionEr});
     if((dl||F.pensionEr!==pensionEr)&&decide('insProrate','勞健保／勞退分項調整',`勞保 ${N(F.labor)}→${N(labor)}（${pr.laborDays} 日）、健保 ${N(F.health)}→${N(health)}${F.pensionSelf?`、勞退自提 ${N(F.pensionSelf)}→${N(pensionSelf)}`:''}、雇主勞退 ${N(F.pensionEr)}→${N(pensionEr)}（勞退暫按原估算 ${pr.insDays} 日；須另核帳單，不代表已驗證勞退邊界）${pr.healthFull?'；健保月底在保':'；月中離職健保不收'}${laborReviewNeeded?'；本項不採用只恢復健保／勞退，勞保另於分項核對及本月覆寫處理。':''}`,dl,sig)==='no'){({health,pensionSelf,pensionEr}=F);if(!laborReviewNeeded)labor=F.labor;}}
