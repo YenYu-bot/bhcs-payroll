@@ -1,0 +1,1 @@
+Isolated validation of explicitly synthetic derivative device copy. Not original candidate, not production deployment. Uses original sandbox gate, supervisor and no-uplink namespace. Five case groups verify disabled cloud/CSP/storage isolation, rejected imports, and encrypted backup download/reimport. Narrow desktop viewport is not actual mobile device validation.
