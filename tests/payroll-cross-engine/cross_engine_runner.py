@@ -15,6 +15,8 @@ import json
 import os
 from pathlib import Path
 import shlex
+import socket
+import subprocess
 import sys
 import time
 import traceback
@@ -130,16 +132,29 @@ def process_snapshot():
             except (OSError,ValueError,IndexError):pass # Process may already have exited.
     return records,unreadable
 
+def validate_network(interfaces, ip_addresses, ipv4, ipv6):
+    errors=[]
+    ip_interfaces=sorted(item['ifname'] for item in ip_addresses)
+    if interfaces!=['lo']:errors.append('socket network interfaces must be exactly loopback')
+    if ip_interfaces!=['lo']:errors.append('ip network interfaces must be exactly loopback')
+    if interfaces!=ip_interfaces:errors.append('socket and ip interface evidence disagree')
+    if any(r[0]!='lo' for r in ipv4):errors.append('non-loopback IPv4 route present')
+    if any(r[-1]!='lo' for r in ipv6):errors.append('non-loopback IPv6 route present')
+    return errors
+
 def network_evidence():
-    interfaces=sorted(p.name for p in Path('/sys/class/net').iterdir())
+    # /sys is a shared mount and may expose the host net namespace after unshare.
+    # Both socket ioctl/netlink and ip netlink query this process's current netns.
+    interfaces=sorted(name for _,name in socket.if_nameindex())
+    ip_addresses=json.loads(subprocess.run(['ip','-j','address'],check=True,
+                                          capture_output=True,text=True,timeout=5).stdout)
     routes=Path('/proc/net/route').read_text().splitlines()
     ipv4=[l.split() for l in routes[1:] if l.strip()]
     ipv6=[l.split() for l in Path('/proc/net/ipv6_route').read_text().splitlines() if l.strip()]
-    errors=[]
-    if interfaces!=['lo']:errors.append('network interfaces must be exactly loopback')
-    if any(r[0]!='lo' for r in ipv4):errors.append('non-loopback IPv4 route present')
-    if any(r[-1]!='lo' for r in ipv6):errors.append('non-loopback IPv6 route present')
-    return {'interfaces':interfaces,'ipv4Routes':ipv4,'ipv6Routes':ipv6,'errors':errors,
+    errors=validate_network(interfaces,ip_addresses,ipv4,ipv6)
+    return {'interfaces':interfaces,'ipAddresses':ip_addresses,
+            'interfaceEvidenceSources':['socket.if_nameindex','ip -j address'],
+            'ipv4Routes':ipv4,'ipv6Routes':ipv6,'errors':errors,
             'networkNamespace':os.readlink('/proc/self/ns/net')}
 
 def load_migration(path):

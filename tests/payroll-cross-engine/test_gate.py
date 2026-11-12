@@ -43,6 +43,19 @@ class GateTests(unittest.TestCase):
   for key in m.DISABLED_ENV:self.assertTrue(m.check_environment({key:'0'},1001))
  def test_descendant_closure_and_cycle(self):
   r=[proc(40,30,[]),proc(30,20,[]),proc(20,10,[]),proc(99,99,[])];self.assertEqual(m.descendant_ids(r,10),{20,30,40})
+ def test_network_loopback_only_pass(self):
+  self.assertEqual(m.validate_network(['lo'],[{'ifname':'lo'}],[],[]),[])
+ def test_network_either_observer_extra_interface_blocks(self):
+  for names,ips in [(['eth0','lo'],[{'ifname':'lo'}]),(['lo'],[{'ifname':'lo'},{'ifname':'eth0'}]),([],[])]:
+   with self.subTest(names=names,ips=ips):self.assertTrue(m.validate_network(names,ips,[],[]))
+ def test_network_non_loopback_routes_block(self):
+  for v4,v6 in [([['eth0','00000000']],[]),([],[['0','eth0']])]:
+   self.assertTrue(m.validate_network(['lo'],[{'ifname':'lo'}],v4,v6))
+ def test_network_no_sys_mount_observer(self):
+  import inspect
+  self.assertNotIn('/sys/class/net',inspect.getsource(m.network_evidence))
+  self.assertIn('socket.if_nameindex()',inspect.getsource(m.network_evidence))
+  self.assertIn("['ip','-j','address']",inspect.getsource(m.network_evidence))
  def test_no_disable_launch_flags(self):
   s=P.read_text();self.assertIn('launch(headless=True)',s);self.assertNotIn('chromium_sandbox=False',s)
 if __name__=='__main__':unittest.main()
