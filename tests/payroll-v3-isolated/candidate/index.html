@@ -943,6 +943,26 @@ function employment(e,ym){const R=ymRange(ym),last=R.end-DAY,h=pd(e.hire),l=pd(e
     healthFull:!(l!=null&&l<last),                      // 健保：月底在保收全月
     leavesThisMonth:l!=null&&l>=R.start&&l<=last};}
 
+/* 勞退破月核對：日數不可由勞保直接推定。未取得可核對依據時只顯示草稿。 */
+function pensionBasisSig(e,ym){return JSON.stringify({v:1,id:e.id,ym,hire:e.hire,leave:e.leave,pensionWage:e.pensionWage,laborGrade:e.laborGrade,pensionSelf:e.pensionSelf,insAuto:e.insAuto});}
+function resolvePensionBasis(e,ym,r){const b=r.pensionBasis;
+ if(!b||b.sig!==pensionBasisSig(e,ym)||b.verified!==true||!Number.isInteger(b.revision)||b.revision<1||!Number.isFinite(Date.parse(b.checkedAt))||typeof b.note!=='string'||!b.note.trim()||![b.employer,b.self].every(x=>Number.isSafeInteger(x)&&x>=0)||!Number.isInteger(b.days)||b.days<0||b.days>30)return {ok:false,reason:'本月勞退提繳日數及雇主／自提金額尚未核對，或員工設定已變更'};
+ const raw=r.overrides&&r.overrides['勞退自提'];
+ if(raw!=null&&raw!==''&&(!Number.isFinite(+raw)||+raw!==b.self))return {ok:false,reason:'本月勞退自提覆寫與已核對帳單不一致；請移除覆寫或重新核對'};
+ return {...b,ok:true};}
+function recordPensionBasis(e,ym,r,days,employer,self,note){
+ if(r.confirmed)throw Error('已確認薪資不可更改勞退核對資料');
+ if(!Number.isInteger(days)||days<0||days>30||![employer,self].every(x=>Number.isSafeInteger(x)&&x>=0)||!String(note||'').trim())throw Error('請填 0～30 整數日、非負整數金額及核對依據');
+ const previous=r.pensionBasis;const next={sig:pensionBasisSig(e,ym),verified:true,days,employer,self,note:String(note).trim(),checkedAt:new Date().toISOString(),revision:(previous?.revision||0)+1,history:previous?[...(previous.history||[]),Object.fromEntries(Object.entries(previous).filter(([k])=>k!=='history'))]:[]};
+ r.pensionBasis=next;return next;}
+function editPensionBasis(eid){const ym=curYM(),e=emp(eid),r=mrec(eid);if(!e||r.confirmed)return;
+ const inputs=[];for(const label of ['本月勞退帳單／提繳明細的提繳日數（0～30 整數日，不可直接抄勞保日數）','本月雇主提繳金額（整數元）','本月員工自提金額（整數元，未自提請填 0）']){const raw=prompt(label,'');if(raw==null)return;if(!raw.trim()||!/^\d+$/.test(raw.trim())||!Number.isSafeInteger(Number(raw))){toast('請填非負整數');return;}inputs.push(Number(raw));}
+ if(inputs[0]>30){toast('提繳日數不可超過 30 日');return;}
+ const note=prompt('核對依據（例如本月勞退繳款明細日期及項目；勿填帳號或個人識別碼）。日期、級距與金額不符時先查明，不能照抄草稿估算。','');if(note==null||!note.trim())return;
+ if(!confirm('已核對 '+ym+' '+e.name+'：勞退 '+inputs[0]+' 日、雇主 '+inputs[1]+' 元、自提 '+inputs[2]+' 元；依據：'+note+'？'))return;
+ try{recordPensionBasis(e,ym,r,...inputs,note);addLog('核對本月勞退帳單',inputs[0]+' 日；雇主 '+inputs[1]+'；自提 '+inputs[2]+'；'+note,ym,eid);save();renderSlips();}catch(err){toast(err.message);}}
+function pensionBasisBlock(e,c){if(!c.pensionCanReview||c.locked)return '';const b=c.pensionBasis;return '<div class="note no-print" style="border-color:#c0392b"><b>本月勞退帳單核對</b><p>'+esc(!c.pensionReviewNeeded?'一般整月按設定試算；若實際提停繳、級距或費率與設定不同，請先核對本月明細並填入正確金額。':b.ok?'已填 '+b.days+' 日；雇主 '+N(b.employer)+' 元、自提 '+N(b.self)+' 元。依據：'+b.note:b.reason+'。以下估算不是正式金額，不能確認或正式輸出。')+' <button class="btn ghost tiny" onclick="editPensionBasis('+esc(JSON.stringify(e.id))+')">核對／更正勞退帳單</button></p></div>';}
+
 /* 原年度遞延工資依據：舊快照只供建議，不自動信任或改寫。 */
 function leaveBasisKey(o){return o?String(o.start)+':'+String(o.end):'';}
 function resolveLeaveBasis(e,o){if(!o)return {ok:false,reason:'遞延來源期間不明'};
@@ -1179,13 +1199,19 @@ function computeLive(e,ym,r){
   // 勞健保、勞退
   const pw=(+e.pensionWage>0)?+e.pensionWage:(isNaN(+e.laborGrade)?0:+e.laborGrade);
   let labor=+e.labor||0,health=+e.health||0,pensionSelf=Math.round(pw*(+e.pensionSelf||0)/100),pensionEr=Math.round(pw*0.06);
+  const pensionReviewNeeded=pr.employed&&(pr.partial||(pr.monthDays<30&&pr.leavesThisMonth)||!!r.pensionBasis)&&(pw>0||+e.pensionSelf>0||!!r.pensionBasis),pensionBasis=pensionReviewNeeded?resolvePensionBasis(e,ym,r):{ok:false};
   const laborReviewNeeded=pr.employed&&e.insAuto!==false&&pr.laborDays!==30&&labor>0,laborParts=laborReviewNeeded?laborParts2026(e,ym,pr.laborDays):null;
   const laborManual=r.overrides&&r.overrides['勞保費'],laborManualValid=laborManual!=null&&laborManual!==''&&Number.isFinite(+laborManual)&&+laborManual>=0;
   if(!pr.employed){labor=health=pensionSelf=pensionEr=0;}
-  else if(e.insAuto!==false&&(pr.partial||pr.laborDays!==30)){const F={labor,health,pensionSelf,pensionEr},f=pr.insDays/30;labor=laborParts?laborParts.total:Math.round(labor*pr.laborDays/30);pensionSelf=Math.round(pensionSelf*f);pensionEr=Math.round(pensionEr*f);if(!pr.healthFull)health=0;
+  else if(e.insAuto!==false&&(pr.partial||pr.laborDays!==30)){const F={labor,health,pensionSelf,pensionEr},f=pr.insDays/30;labor=laborParts?laborParts.total:Math.round(labor*pr.laborDays/30);pensionSelf=Math.round(pw*(+e.pensionSelf||0)/100*f);pensionEr=Math.round(pw*0.06*f);if(!pr.healthFull)health=0;
     const dl=(F.labor-labor)+(F.health-health)+(F.pensionSelf-pensionSelf);
     const sig=JSON.stringify({v:2,ym,hire:e.hire,leave:e.leave,laborDays:pr.laborDays,pensionDays:pr.insDays,healthFull:pr.healthFull,F,labor,health,pensionSelf,pensionEr});
     if((dl||F.pensionEr!==pensionEr)&&decide('insProrate','勞健保／勞退分項調整',`勞保 ${N(F.labor)}→${N(labor)}（${pr.laborDays} 日）、健保 ${N(F.health)}→${N(health)}${F.pensionSelf?`、勞退自提 ${N(F.pensionSelf)}→${N(pensionSelf)}`:''}、雇主勞退 ${N(F.pensionEr)}→${N(pensionEr)}（勞退暫按原估算 ${pr.insDays} 日；須另核帳單，不代表已驗證勞退邊界）${pr.healthFull?'；健保月底在保':'；月中離職健保不收'}${laborReviewNeeded?'；本項不採用只恢復健保／勞退，勞保另於分項核對及本月覆寫處理。':''}`,dl,sig)==='no'){({health,pensionSelf,pensionEr}=F);if(!laborReviewNeeded)labor=F.labor;}}
+  if(pensionReviewNeeded){
+    if(pensionBasis.ok){pensionSelf=pensionBasis.self;pensionEr=pensionBasis.employer;}
+    const detail=pensionBasis.ok?'已核對本月勞退 '+pensionBasis.days+' 日；雇主 '+N(pensionEr)+' 元、自提 '+N(pensionSelf)+' 元。依據：'+pensionBasis.note:'須先填本月勞退帳單／提繳明細日數與雇主、自提分項金額。單按確認無誤、全部通過或不採用一般調整，均不能以舊估算正式輸出。';
+    decide('pensionPrecision','核對本月勞退提繳明細',detail,0,JSON.stringify({v:1,input:pensionBasisSig(e,ym),basis:pensionBasis,override:r.overrides&&r.overrides['勞退自提']}),true);
+  }
   if(laborReviewNeeded){const detail=laborParts?`2026一般受僱預設：勞保 ${laborParts.ordinary}＋就保 ${laborParts.employment}＝${laborParts.total} 元，分項四捨五入。請核對本人同時適用勞保及就保、無補助，且到離職等於實際加退保日；不符請依帳單覆寫本月勞保費。`:'自訂保費、級距覆寫或非2026年度，不能從全月合計反推正確分項；請依當月帳單覆寫「勞保費」，再個別核對。';
     decide('laborPrecision','核對破月勞保與就保分項',detail+(laborManualValid?' 本月已覆寫 '+laborManual+' 元。':''),0,JSON.stringify({v:1,ym,hire:e.hire,leave:e.leave,grade:e.laborGrade,full:e.labor,days:pr.laborDays,laborParts,manual:laborManual}),true);}
   let baseAmt=(pr.employed&&!hrly)?Math.round((+e.base||0)*pr.factor):0,summerAmt=pr.employed?Math.round((+e.summer||0)*pr.factor):0;
@@ -1247,6 +1273,7 @@ function computeLive(e,ym,r){
     const msg='已覆寫底薪／固定加項，但請假與加班日薪基準尚未另外核對；請改正員工工資設定或移除該覆寫後再確認。';leavePayrollBlocks.push(msg);warns.push(msg);
   }
 
+  if(pensionReviewNeeded&&(!pensionBasis.ok||reviews.some(x=>x.key==='pensionPrecision'&&x.st!=='ok'))){const msg='本月勞退日數與雇主／自提分項尚未完成帳單核對及個別審核，以下僅草稿，不可付款或正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
   if(laborReviewNeeded&&((laborManual!=null&&laborManual!==''&&!laborManualValid)||!laborParts&&!laborManualValid||reviews.some(x=>x.key==='laborPrecision'&&x.st!=='ok'))){const msg='破月勞保／就保尚未核對分項或帳單，以下僅草稿，不可正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
   if(reviews.some(x=>x.key==='workMinutes'&&x.st!=='ok')){const msg='計薪工時與實際休息尚未個別核對，以下僅未完成草稿，不可付款或正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
   if(reviews.some(x=>x.key==='sickFloor'&&x.st!=='ok')){const msg='病假最低工資補足尚未個別核對，以下僅未完成草稿，不可付款或正式輸出。';leavePayrollBlocks.push(msg);warns.push(msg);}
@@ -1262,7 +1289,7 @@ function computeLive(e,ym,r){
   const absence={absentDays:A.absent,pendingDays:A.pending,offsetH:D2(L.offsetDays*HPD),pendingH:D2(A.pendingH),absentH:D2(A.absentH),lateMin:L.totalMin,missing:A.missing,total:D2(A.pendingH+A.absentH+L.totalMin/60)};
   const hoursInfo=hrly?{rate:hr,regH:D2(A.regH+(+r.att.extraHours||0)),extraH:D2(+r.att.extraHours||0),holidayH:D2(A.holidayH),offH:D2(A.offH),paidLeaveH:D2(ML.paidLeave),annualH:D2(annualH),
     halfH:D2((sickHalf+menOwn)*HPD),typhoonH:D2(typhoonPaid?A.typhoonH:0),typhoonWorkH:D2(A.typhoonWorkH)}:null;
-  return {leavePayrollBlocks,deferredNeeds,deferredDetails,settlementBlocked:deferredNeeds.length>0||leavePayrollBlocks.length>0,negNotes,hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
+  return {pensionCanReview:pr.employed&&(pw>0||+e.pensionSelf>0||!!r.pensionBasis),pensionReviewNeeded,pensionBasis,leavePayrollBlocks,deferredNeeds,deferredDetails,settlementBlocked:deferredNeeds.length>0||leavePayrollBlocks.length>0,negNotes,hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
     hr,dw:annualDw,payDayWage:dw,wage:wageBase(e),ot:{weekday:ot.weekday,rest:ot.rest,holiday:ot.holiday,offday:ot.offday,pay:ot.pay,count:ot.count,hours:ot.hours,ext:ot.ext},
     typhoon:{days:A.typhoon,h:D2(A.typhoonH),workH:D2(A.typhoonWorkH)},attend:{sched:A.sched,worked:A.worked,workH:D2(A.workH),regH:D2(A.regH+(+r.att.extraHours||0)),holidayWork:A.holidayWork,hasDays:(r.days||[]).length>0},absence,
     leave:{sick:D2(sickD),men:D2(menD),sickCap:D2(sickCap),personal:D2(perD+carePersonalD),carePersonal:D2(carePersonalD),protectedSick:D2(H(ML.protectedSick)),family:D2(famD),paid:D2(paidD),annualH:D2(annualH),sickYear:D2(sickPrior+sickAll),sickFullDays:D2(sickFull)},
@@ -2036,7 +2063,7 @@ function setReview(eid,key,d){const e=emp(eid),c=computeLive(e,curYM(),mrec(eid)
 function approveAll(eid){const e=emp(eid),m=mrec(eid);if(m.confirmed)return;const c=computeLive(e,curYM(),m);m.reviews=m.reviews||{};let n=0;
   c.reviews.filter(x=>x.st==='pending'&&!x.opts&&!x.ack).forEach(it=>{m.reviews[it.key]={d:'ok',v:it.sig,t:new Date().toISOString()};n++;addLog('審核通過',`${it.label}${it.amt?'（'+N(it.amt)+'）':''}：${it.detail}`,curYM(),eid);});
   save();renderSlips();const left=c.reviews.filter(x=>x.st==='pending'&&(x.opts||x.ack)).length;toast('已通過 '+n+' 項'+(left?'；剩餘項目需個別確認':''));}
-function reviewBlock(e,c){const blocked=deferredBasisBlock(e,c);if(!c.reviews||!c.reviews.length)return blocked;const lock=c.locked;
+function reviewBlock(e,c){const blocked=deferredBasisBlock(e,c)+pensionBasisBlock(e,c);if(!c.reviews||!c.reviews.length)return blocked;const lock=c.locked;
   const rows=c.reviews.map(it=>{const oL=it.opts&&(it.opts.find(o=>o[0]===it.st)||[])[1];
     const badge=oL?`<span class="pill ok">${esc(oL)}</span>`:it.st==='ok'?'<span class="pill ok">已通過</span>':it.st==='no'?'<span class="pill warn">不採用</span>':'<span class="pill gold">待審核</span>';
     const btn=lock?'':it.opts?it.opts.map(([k,t])=>`<button class="btn ${it.st===k?'primary':'ghost'} tiny" onclick="setReview('${e.id}','${it.key}','${k}')">${esc(t)}</button>`).join(''):(it.ack?`<button class="btn ghost tiny" onclick="setReview('${e.id}','${it.key}','ok')">確認無誤</button>`

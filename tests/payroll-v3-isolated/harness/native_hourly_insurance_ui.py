@@ -7,7 +7,7 @@ import argparse, hashlib, json, os, pathlib, socket, threading, traceback, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
-EXPECTED='a146b9d941b0f110a7d4e404e130fbd182e27a322fbe730a10cd25a180d77e7c'
+EXPECTED='dd0c88ea87a0837fb21da38e903b4aa68783fab9d01b9c87a15b12c7a6b6d58c'
 def need(value, msg):
  if not value: raise AssertionError(msg)
 
@@ -133,7 +133,11 @@ def main():
       need(money('勞保費')=='378','30300 15d must348+30=378, not379')
       need(page.locator('.rv-tbl').inner_text().find('348')>=0 and page.locator('.rv-tbl').inner_text().find('378')>=0,'component review detail missing')
       review('workMinutes','ok');need(blocked() and pending('laborPrecision')=='pending','work review bypassed insurance review');blocked_outputs()
-      review('laborPrecision','ok');need(not blocked(),'standard known grade not released');reload_slip();need(money('勞保費')=='378' and pending('laborPrecision')=='ok','precision review lost on IDB reload');mark('standard_378_individual_review')
+      review('laborPrecision','ok');need(blocked() and pending('pensionPrecision')=='pending','labor acknowledgment bypassed pension gate');blocked_outputs()
+      # This grade also supplies the pension wage. Resolve the NEW independent gate through native dialogs.
+      dialog_queue.extend([('prompt','15'),('prompt','909'),('prompt','0'),('prompt','合成勞退提繳明細'),('confirm','yes')])
+      page.get_by_role('button',name='核對／更正勞退帳單',exact=True).click();save_done();need(not dialog_queue,'pension dialogs not consumed')
+      need(blocked(),'statement skipped individual review');review('pensionPrecision','ok');need(not blocked(),'standard known grade not released');reload_slip();need(money('勞保費')=='378' and pending('laborPrecision')=='ok','precision review lost on IDB reload');mark('standard_378_individual_review')
      elif kind=='unknown':
       review('workMinutes','ok');review('laborPrecision','ok');need(blocked(),'unknown amount acknowledgment guessed bill');blocked_outputs();mark('unknown_bill_not_guessed')
       override_bill(378);need(pending('laborPrecision')=='pending' and blocked(),'bill change did not invalidate precision review');blocked_outputs()

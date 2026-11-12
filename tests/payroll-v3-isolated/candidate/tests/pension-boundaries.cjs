@@ -1,0 +1,48 @@
+// Synthetic numerical fixtures. Differential equality is not a legal or calculation-correctness sign-off.
+const fs=require('fs'),vm=require('vm');
+const elements={};const el=id=>elements[id]||=({value:'',checked:false,innerHTML:'',textContent:'',style:{},dataset:{},classList:{add(){},remove(){},contains(){return false},toggle(){}},addEventListener(){},appendChild(){},querySelectorAll(){return []},querySelector(){return null}});
+const doc={getElementById:el,querySelectorAll(){return []},querySelector(){return null},createElement(){return el('anon')},addEventListener(){},body:el('body')};
+let script=fs.readFileSync(process.env.PAYROLL_HTML||require('node:path').join(__dirname,'../index.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+script=script.split('\n').filter(l=>!l.startsWith("if(load()==='locked')")&&!l.startsWith('cloudInit();')).join('\n');
+const context=vm.createContext({document:doc,console,localStorage:{getItem(){return null},setItem(){}},window:{},crypto:require('crypto').webcrypto,TextEncoder,TextDecoder,URL,Blob,setTimeout(){},clearTimeout(){},setInterval(){},clearInterval(){},navigator:{}});
+vm.runInContext(script,context);
+const run=code=>vm.runInContext(code,context);
+run(`function testEmp(p={}){return Object.assign({id:'test',name:'合成測試',payType:'monthly',base:36000,rate:200,hire:'2026-01-01',leave:'',labor:0,health:0,perfect:0,summer:0,otFixed:0,fixedItems:[],pensionWage:0,pensionSelf:0,sched:Object.fromEntries(Array.from({length:7},(_,i)=>['d'+i,{type:i===0?'off':i===6?'rest':'work',start:'09:00',end:'17:00'}])),hourBasis:'punch',hourRound:0,brkMin:0,brkAfter:0,leaveSystem:'cal',yearEnd:'pay',lateePolicy:'deduct',lateGrace:0,lateUnit:0},p)};function runCase(e,r,ym='2026-11'){state.settings=DEF_SETTINGS();state.employees=[e];state.months={[ym]:{[e.id]:r}};const c=computeLive(e,ym,r);return {pr:c.pr,earnings:c.earnings.filter(x=>x[1]),deducts:c.deducts.filter(x=>x[1]),ot:c.ot,attend:c.attend,pensionEr:c.pensionEr,warns:c.warns,reviews:c.reviews}};function workDay(date,h,kind='work'){return {date,wk:wkOf(date),status:'work',kind,wh:h*60,punches:2,in:'09:00',out:'19:00'}}`);
+run(`function acknowledgePension(e,r,ym='2026-02'){recordPensionBasis(e,ym,r,15,900,900,'合成帳單已核對');const v=computeLive(e,ym,r).reviews.find(x=>x.key==='pensionPrecision');r.reviews.pensionPrecision={d:'ok',v:v.sig};}`);
+// New pension gate is independent of labor insurance acknowledgment; release tests explicitly resolve it.
+const assert=require('node:assert/strict');let passed=0;
+function check(name,code,expected){const actual=JSON.parse(JSON.stringify(run(code)));assert.deepEqual(actual,expected,name);passed++;console.log('PASS '+name);}
+
+
+
+const setup=`const e=testEmp({hire:'2026-02-16',pensionWage:30000,pensionSelf:6}),r=blankRec();runCase(e,r,'2026-02');curYM=()=> '2026-02';save=()=>{};renderSlips=()=>{};toast=()=>{};`;
+const accept=`recordPensionBasis(e,'2026-02',r,15,900,900,'合成勞退繳款明細');let q=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='pensionPrecision');r.reviews.pensionPrecision={d:'ok',v:q.sig};`;
+check('partial February has independent pension blocker',`(()=>{${setup}return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('full ordinary February termination gated despite partial false',`(()=>{${setup}e.hire='2025-01-01';e.leave='2026-02-28';const c=computeLive(e,'2026-02',r);return [c.pr.partial,c.pensionReviewNeeded,c.settlementBlocked]})()`,[false,true,true]);
+check('full leap February termination gated',`(()=>{${setup}e.hire='2025-01-01';e.leave='2028-02-29';const c=computeLive(e,'2028-02',r);return [c.pr.partial,c.pensionReviewNeeded,c.settlementBlocked]})()`,[false,true,true]);
+check('February28 in leap year partial gated',`(()=>{${setup}e.hire='2025-01-01';e.leave='2028-02-28';return computeLive(e,'2028-02',r).settlementBlocked})()`,true);
+check('normal whole employed month unchanged',`(()=>{${setup}e.hire='2025-01-01';const c=computeLive(e,'2026-02',r);return [c.pensionReviewNeeded,c.settlementBlocked,c.pensionEr]})()`,[false,false,1800]);
+check('no pension setting does not invent contribution',`(()=>{${setup}e.pensionWage=0;e.pensionSelf=0;const c=computeLive(e,'2026-02',r);return [c.pensionReviewNeeded,c.pensionEr]})()`,[false,0]);
+check('not employed does not charge pension',`(()=>{${setup}e.leave='2026-01-31';const c=computeLive(e,'2026-02',r);return [c.pensionReviewNeeded,c.pensionEr]})()`,[false,0]);
+check('insAuto false cannot bypass uncertain boundary',`(()=>{${setup}e.insAuto=false;return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('no invoice generic acknowledgment cannot bypass',`(()=>{${setup}let q=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='pensionPrecision');r.reviews.pensionPrecision={d:'ok',v:q.sig};return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('bulk approve cannot bypass',`(()=>{${setup}approveAll(e.id);return [computeLive(e,'2026-02',r).settlementBlocked,payrollReadyForOutput()]})()`,[true,false]);
+check('invoice alone still needs individual review',`(()=>{${setup}recordPensionBasis(e,'2026-02',r,15,900,900,'合成帳單');approveAll(e.id);return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('verified statement sets two components and clears blocker',`(()=>{${setup}${accept}const c=computeLive(e,'2026-02',r);return [c.settlementBlocked,c.pensionEr,c.deducts.find(x=>x[0]==='勞退自提')[1],payrollReadyForOutput()]})()`,[false,900,900,true]);
+check('zero self valid when statement says no self contribution',`(()=>{${setup}recordPensionBasis(e,'2026-02',r,15,900,0,'合成帳單無自提');let q=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='pensionPrecision');r.reviews.pensionPrecision={d:'ok',v:q.sig};const c=computeLive(e,'2026-02',r);return [c.settlementBlocked,c.deducts.find(x=>x[0]==='勞退自提')[1]]})()`,[false,0]);
+check('insProrate no cannot restore full pension after statement',`(()=>{${setup}${accept}let a=computeLive(e,'2026-02',r).reviews.find(x=>x.key==='insProrate');r.reviews.insProrate={d:'no',v:a.sig};const c=computeLive(e,'2026-02',r);return [c.pensionEr,c.deducts.find(x=>x[0]==='勞退自提')[1]]})()`,[900,900]);
+for(const [key,value] of [['hire','2026-02-17'],['leave','2026-02-28'],['pensionWage',30300],['pensionSelf',5],['laborGrade',30300],['insAuto',false],['id','other']])check('basis invalidated '+key,`(()=>{${setup}${accept}e[${JSON.stringify(key)}]=${JSON.stringify(value)};return resolvePensionBasis(e,'2026-02',r).ok})()`,false);
+check('month cannot reuse basis',`(()=>{${setup}${accept}return resolvePensionBasis(e,'2026-03',r).ok})()`,false);
+check('same dollars new source needs fresh review',`(()=>{${setup}${accept}recordPensionBasis(e,'2026-02',r,15,900,900,'更正來源');return [computeLive(e,'2026-02',r).settlementBlocked,r.pensionBasis.history.length]})()`,[true,1]);
+check('basis survives JSON storage round trip',`(()=>{${setup}${accept}const rr=JSON.parse(JSON.stringify(r));const c=computeLive(e,'2026-02',rr);return [c.settlementBlocked,c.pensionEr]})()`,[false,900]);
+for(const amount of [-1,'bad',901,NaN])check('conflicting self override blocked '+amount,`(()=>{${setup}${accept}r.overrides['勞退自提']=${Number.isNaN(amount)?'NaN':JSON.stringify(amount)};return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('matching override requires fresh separate review',`(()=>{${setup}${accept}r.overrides['勞退自提']=900;return computeLive(e,'2026-02',r).settlementBlocked})()`,true);
+check('history frozen remains immutable',`(()=>{${setup}r.confirmed=true;r.snapshot={net:77,pensionEr:22};const before=JSON.stringify(r);return [compute(e,'2026-02').pensionEr,JSON.stringify(r)===before]})()`,[22,true]);
+check('cannot write statement into confirmed snapshot',`(()=>{${setup}r.confirmed=true;try{recordPensionBasis(e,'2026-02',r,15,900,900,'test');return false;}catch(e){return true}})()`,true);
+for(const args of [[31,900,0,'x'],[-1,900,0,'x'],[1.5,900,0,'x'],[15,-1,0,'x'],[15,900,1.5,'x'],[15,900,0,'']])check('invalid statement rejected '+JSON.stringify(args),`(()=>{${setup}try{recordPensionBasis(e,'2026-02',r,...${JSON.stringify(args)});return false;}catch(e){return true}})()`,true);
+check('January partial also gated',`(()=>{${setup}e.hire='2026-01-16';return computeLive(e,'2026-01',r).settlementBlocked})()`,true);
+check('manual statement can handle dates not matching employment with source',`(()=>{${setup}e.hire='2025-01-01';recordPensionBasis(e,'2026-02',r,12,720,0,'合成提停繳異於到離職／已核對明細');const c=computeLive(e,'2026-02',r);return [c.pensionReviewNeeded,c.pensionEr,c.settlementBlocked]})()`,[true,720,true]);
+check('unverified employer cost has dedicated warning and UI',`(()=>{${setup}const c=computeLive(e,'2026-02',r);return [pensionBasisBlock(e,c).includes('核對／更正勞退帳單'),c.leavePayrollBlocks.some(x=>x.includes('雇主／自提'))]})()`,[true,true]);
+check('partial estimate rounds only once, 29500 x0.5pct x7/30 is34 not35',`(()=>{${setup}e.hire='2026-01-01';e.leave='2026-01-07';e.pensionWage=29500;e.pensionSelf=0.5;const c=computeLive(e,'2026-01',r);return [c.deducts.find(x=>x[0]==='勞退自提')[1],c.settlementBlocked]})()`,[34,true]);
+check('whole-month manual statement entry available without automatic blocking',`(()=>{${setup}e.hire='2025-01-01';const c=computeLive(e,'2026-02',r);return [pensionBasisBlock(e,c).includes('核對／更正勞退帳單'),c.settlementBlocked]})()`,[true,false]);
+console.log(passed+' pension safety assertions passed; manual statement gate, NOT automatic February legal sign-off');
