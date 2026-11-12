@@ -1,0 +1,63 @@
+name: Payroll cross-engine safety feasibility
+on:
+  push:
+    branches: [test/payroll-v3-isolated-20261112]
+    paths: ['tests/payroll-cross-engine/**', '.github/workflows/payroll-cross-engine.yml']
+permissions:
+  contents: read
+concurrency:
+  group: payroll-cross-engine-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  cross-engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [firefox, webkit]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify inputs and prepare browser only
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="$GITHUB_WORKSPACE/tests/payroll-v3-isolated"
+          M="$GITHUB_WORKSPACE/tests/payroll-migration"
+          X="$GITHUB_WORKSPACE/tests/payroll-cross-engine"
+          mkdir -p "$X/evidence"
+          (cd "$P" && sha256sum -c INPUTS.sha256) | tee "$X/evidence/inputs.txt"
+          (cd "$M" && sha256sum -c MANIFEST.sha256) | tee "$X/evidence/test-inputs.txt"
+          (cd "$X" && sha256sum -c MANIFEST.sha256)
+          python3 -I "$X/test_gate.py" > "$X/evidence/tool-tests.txt" 2>&1
+          python3 -m venv "$RUNNER_TEMP/payroll-venv"
+          "$RUNNER_TEMP/payroll-venv/bin/pip" install 'playwright==1.56.0'
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/payroll-browsers" "$RUNNER_TEMP/payroll-venv/bin/python" -m playwright install --with-deps ${{ matrix.engine }}
+      - name: Fail-closed engine sandbox probe then synthetic migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="$GITHUB_WORKSPACE/tests/payroll-v3-isolated"
+          M="$GITHUB_WORKSPACE/tests/payroll-migration"
+          X="$GITHUB_WORKSPACE/tests/payroll-cross-engine"
+          mkdir -p "$RUNNER_TEMP/payroll-migration-home"
+          sudo unshare --net -- bash -c '
+            set -euo pipefail
+            ip link set lo up
+            exec runuser -u "$1" -- env -i \
+              HOME="$2/payroll-migration-home" \
+              PATH="$2/payroll-venv/bin:/usr/local/bin:/usr/bin:/bin" \
+              PLAYWRIGHT_BROWSERS_PATH="$2/payroll-browsers" \
+              LANG=C.UTF-8 CI=true \
+              bash "$5/isolated_cross_engine.sh" "$3" "$4" "$5" "$6"
+          ' _ "$(id -un)" "$RUNNER_TEMP" "$P" "$M" "$X" "${{ matrix.engine }}"
+      - name: Retain only synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payroll-cross-engine-${{ matrix.engine }}-${{ github.sha }}
+          path: tests/payroll-cross-engine/evidence/
+          retention-days: 14
+          if-no-files-found: warn
