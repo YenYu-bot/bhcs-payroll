@@ -41,3 +41,9 @@ python3 -I "$ROOT/harness/supervise.py" --out "$OUT/pension-ui-supervisor" --tim
 # Paid annual leave does not remove the sick-only normal-wage floor; overrides remain guarded.
 node "$ROOT/candidate/tests/paid-annual-sick-floor.cjs" | tee "$OUT/paid-annual-sick-floor.txt"
 python3 -I "$ROOT/harness/supervise.py" --out "$OUT/paid-annual-sick-ui-supervisor" --timeout 420 -- python3 -I "$ROOT/harness/native_paid_annual_sick_ui.py" --candidate-root "$ROOT/candidate" --output "$OUT/paid-annual-sick-ui" > "$OUT/paid-annual-sick-ui.log" 2>&1
+
+# Year-specific standards and employee-specific fixed-schedule calendar mappings.
+node "$ROOT/candidate/tests/year-boundaries.cjs" | tee "$OUT/year-boundaries.txt"
+node "$ROOT/candidate/tests/calendar-2027.cjs" | tee "$OUT/calendar-2027.txt"
+node "$ROOT/candidate/tests/review-final.cjs" | tee "$OUT/calendar-independent.txt"
+python3 -I "$ROOT/harness/supervise.py" --out "$OUT/calendar-ui-supervisor" --timeout 420 -- python3 -I "$ROOT/harness/native_calendar_ui.py" --html "$ROOT/candidate/index.html" --out "$OUT/calendar-ui" > "$OUT/calendar-ui.log" 2>&1

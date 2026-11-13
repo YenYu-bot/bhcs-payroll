@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
 
-EXPECTED='562ba4bbee112235eb8b014b66108236bb98115bfb09ddf20f8a73c26b0c9388'
+EXPECTED='b0b9d095842e2e67c366a8c53d3346fbe9c5bbb70250ae3ac93c4e314b16f5d9'
 FIXTURE=r'''kind => {
  const e={id:'synthetic-review',name:'獨立審核合成員工',payType:'monthly',base:36000,rate:200,
  hire:'2026-01-01',leave:'',labor:0,health:0,perfect:0,summer:0,otFixed:0,fixedItems:[],

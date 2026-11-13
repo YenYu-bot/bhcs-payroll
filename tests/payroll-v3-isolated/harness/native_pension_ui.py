@@ -7,7 +7,7 @@ import argparse, hashlib, json, os, pathlib, socket, threading, traceback, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
-EXPECTED='562ba4bbee112235eb8b014b66108236bb98115bfb09ddf20f8a73c26b0c9388'
+EXPECTED='b0b9d095842e2e67c366a8c53d3346fbe9c5bbb70250ae3ac93c4e314b16f5d9'
 def need(value, msg):
  if not value: raise AssertionError(msg)
 
@@ -127,8 +127,9 @@ def main():
      days=30 if kind in ['fullFebruary','leap'] else 15;amount=1800 if days==30 else 900
      enter_statement(days,amount,amount)
      need(blocked() and pending('pensionPrecision')=='pending','statement skipped individual acknowledgment');approve_all();need(blocked(),'batch approved statement')
-     review('pensionPrecision','ok');need(not blocked(),'verified statement not released');need(money('勞退自提')==str(amount),'self amount not statement');need(page.evaluate("compute(emp('synthetic-review')).pensionEr")==amount,'employer amount not statement')
-     reload_slip();need(not blocked() and money('勞退自提')==str(amount) and pending('pensionPrecision')=='ok','statement/review did not survive native IDB');mark('statement_and_review_persist')
+     # 2028 retains independent unknown-wage/calendar gates even after a valid pension statement.
+     review('pensionPrecision','ok');need(blocked()==(kind=='leap'),'pension acknowledgment must not bypass unknown 2028 annual gates');need(money('勞退自提')==str(amount),'self amount not statement');need(page.evaluate("compute(emp('synthetic-review')).pensionEr")==amount,'employer amount not statement')
+     reload_slip();need(blocked()==(kind=='leap') and money('勞退自提')==str(amount) and pending('pensionPrecision')=='ok','statement/review did not survive native IDB');mark('statement_and_review_persist')
      if kind=='conflict':
       field=page.locator('input[data-lb="勞退自提"]');field.fill('901');field.press('Tab');save_done();need(blocked(),'conflicting override not blocked');blocked_outputs()
       field=page.locator('input[data-lb="勞退自提"]');field.fill('');field.press('Tab');save_done();need(pending('pensionPrecision')=='ok' or blocked(),'unexpected status after removing override');mark('override_conflict_blocked')
@@ -136,10 +137,14 @@ def main():
      # Invalid current contribution setting forces re-verification even when the old amount is unchanged.
      page.evaluate("async()=>{emp('synthetic-review').pensionWage=30300;await save();renderSlips();}");need(blocked(),'wage basis change reused statement');blocked_outputs()
      page.emulate_media(media='print');need(page.locator('.slip').evaluate("e=>Array.from(e.children).every(x=>getComputedStyle(x).display==='none')"),'blocked print leaked fields');page.pdf(path=str(out/(kind+'-blocked.pdf')),print_background=True);page.emulate_media(media='screen')
-     enter_statement(days,amount,amount,'合成更正級距後明細');review('pensionPrecision','ok');approve_all();confirm_click();need(page.evaluate("mrec('synthetic-review').confirmed"),'fully reviewed payroll not confirmed')
-     snapshot=page.evaluate("JSON.stringify(mrec('synthetic-review').snapshot)");reload_slip();need(page.evaluate("compute(emp('synthetic-review')).locked"),'snapshot not persisted')
-     page.evaluate("async()=>{emp('synthetic-review').pensionWage=45800;emp('synthetic-review').pensionSelf=0;await save();renderSlips();}");reload_slip()
-     need(page.evaluate("JSON.stringify(mrec('synthetic-review').snapshot)")==snapshot and money('勞退自提')==str(amount),'confirmed snapshot changed after current settings changed');mark('historical_snapshot_immutable')
+     enter_statement(days,amount,amount,'合成更正級距後明細');review('pensionPrecision','ok');approve_all();confirm_click()
+     if kind=='leap':
+      need(not page.evaluate("mrec('synthetic-review').confirmed") and blocked(),'unknown 2028 year incorrectly released');blocked_outputs();mark('unknown_year_remains_blocked_after_pension_review')
+     else:
+      need(page.evaluate("mrec('synthetic-review').confirmed"),'fully reviewed payroll not confirmed')
+      snapshot=page.evaluate("JSON.stringify(mrec('synthetic-review').snapshot)");reload_slip();need(page.evaluate("compute(emp('synthetic-review')).locked"),'snapshot not persisted')
+      page.evaluate("async()=>{emp('synthetic-review').pensionWage=45800;emp('synthetic-review').pensionSelf=0;await save();renderSlips();}");reload_slip()
+      need(page.evaluate("JSON.stringify(mrec('synthetic-review').snapshot)")==snapshot and money('勞退自提')==str(amount),'confirmed snapshot changed after current settings changed');mark('historical_snapshot_immutable')
      need(not errors,'page errors '+repr(errors));need(not dialog_queue,'unconsumed dialogs');page.wait_for_timeout(300);page.screenshot(path=str(out/(kind+'.png')),full_page=True)
      report['cases'].append({'case':kind,'result':'PASS','events':events,'dialogs':dialogs,'downloads':downloads,'steps':steps,'ui_event_batches':ui_batches,'ui_events':page.evaluate('window.__uiEventLog')})
     except Exception:
