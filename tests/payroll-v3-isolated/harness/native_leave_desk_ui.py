@@ -59,8 +59,9 @@ async def main():
           const m=blankRec(),h=blankRec(),locked=blankRec();
           m.days=[{date:'2026-10-08',wk:'四',status:'pending',kind:'work',hours:null,punches:0,wh:0}];
           h.days=[{date:'2026-10-08',wk:'四',status:'work',kind:'work',hours:3,punches:2,wh:180}];
-          Object.assign(locked,{confirmed:true,snapshot:{net:7777,marker:'unchanged'}});
-          return {version:3,settings:DEF_SETTINGS(),employees:[make('salary'),make('hourly','hourly'),make('locked')],months:{'2026-10':{salary:m,hourly:h,locked}},log:[]};
+          const fixture={version:3,settings:DEF_SETTINGS(),employees:[make('salary'),make('hourly','hourly'),make('locked')],months:{'2026-10':{salary:m,hourly:h,locked}},log:[]};
+          const old=state;try{state=fixture;const snapshot=computeLive(fixture.employees[2],'2026-10',locked);Object.assign(locked,{confirmed:true,snapshot:{...snapshot,net:7777,marker:'unchanged'}});}finally{state=old;}
+          return fixture;
         }""")
         await page.locator('#storageSetup input[type=file]').set_input_files({'name':'synthetic-leave-desk.json','mimeType':'application/json','buffer':json.dumps(fixture).encode()})
         await page.wait_for_function('localDB.ready && !sec.locked && !persistence.loadBlocked')
@@ -85,7 +86,12 @@ async def main():
         assert '20 分鐘' in await page.locator('#ldList').inner_text();checks.append('partial-20-minute-visible')
         await page.locator('[data-v="att"]').click()
         await page.locator('#attFile').set_input_files({'name':'synthetic.csv','mimeType':'text/csv','buffer':'姓名,日期,假別,時數\n合成-salary,2026-10-08,事假,1\n'.encode()})
-        await page.get_by_text('已有請假登記，未覆蓋：合成-salary。請到出勤日曆核對後手動補登出勤。',exact=True).wait_for()
+        try:
+            await page.get_by_text('已有請假登記，未覆蓋：合成-salary。請到出勤日曆核對後手動補登出勤。',exact=True).wait_for(timeout=8000)
+        except Exception:
+            print(json.dumps(await page.evaluate("""()=>({message:$('parseMsg').textContent,ym:curYM(),days:state.months['2026-10'].salary.days})"""),ensure_ascii=False),flush=True)
+            print(json.dumps({'pageErrors':errors},ensure_ascii=False),flush=True)
+            raise
         assert await page.evaluate("state.months['2026-10'].salary.days[0].status")=='annual';checks.append('import-cannot-overwrite')
         if await page.locator('#absModal').evaluate("e=>e.classList.contains('on')"):await page.locator('#absModal button[onclick="closeAbs()"]').first.click()
         await page.reload();await page.wait_for_function('localDB.ready && !sec.locked')
@@ -106,7 +112,7 @@ async def main():
         await page.select_option('#ldEmployee','locked')
         await enter('2026-10-08','sick') if not await page.locator('#ldType').is_disabled() else await page.locator('#ldDate').fill('2026-10-08')
         assert await page.locator('#ldSave').is_disabled()
-        assert await page.evaluate("state.months['2026-10'].locked.snapshot")=={'net':7777,'marker':'unchanged'}
+        assert await page.evaluate("state.months['2026-10'].locked.snapshot")==fixture['months']['2026-10']['locked']['snapshot']
         checks.append('confirmed-snapshot-protected')
         assert not errors and not downloads and not requests,(errors,downloads,requests)
         await page.screenshot(path=str(out/'leave-desk.png'),full_page=True)
