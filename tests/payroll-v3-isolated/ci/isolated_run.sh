@@ -47,3 +47,4 @@ node "$ROOT/candidate/tests/year-boundaries.cjs" | tee "$OUT/year-boundaries.txt
 node "$ROOT/candidate/tests/calendar-2027.cjs" | tee "$OUT/calendar-2027.txt"
 node "$ROOT/candidate/tests/review-final.cjs" | tee "$OUT/calendar-independent.txt"
 python3 -I "$ROOT/harness/supervise.py" --out "$OUT/calendar-ui-supervisor" --timeout 420 -- python3 -I "$ROOT/harness/native_calendar_ui.py" --html "$ROOT/candidate/index.html" --out "$OUT/calendar-ui" > "$OUT/calendar-ui.log" 2>&1
+python3 -I "$ROOT/harness/supervise.py" --out "$OUT/leave-desk-ui-supervisor" --timeout 360 -- python3 -I "$ROOT/harness/native_leave_desk_ui.py" --html "$ROOT/candidate/index.html" --out "$OUT/leave-desk-ui" > "$OUT/leave-desk-ui.log" 2>&1

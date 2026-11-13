@@ -5,7 +5,7 @@ This script was syntax-checked locally, NOT executed in the local environment.
 import argparse, asyncio, hashlib, http.server, json, os, pathlib, threading, subprocess
 from playwright.async_api import async_playwright
 from urllib.parse import urlsplit
-EXPECTED='b0b9d095842e2e67c366a8c53d3346fbe9c5bbb70250ae3ac93c4e314b16f5d9'
+EXPECTED='388620bb25f64db6245bf187d4bbe64c6e78a22920f4509e9577cf65e0ceb837'
 SOURCES=['01-01','02-04','02-05','02-06','02-07','02-08','02-28','04-04','04-05','05-01','06-09','09-15','09-28','10-10','10-25','12-25']
 TARGETS={'02-06':'02-09','02-07':'02-10','02-28':'03-01','04-04':'04-06','05-01':'05-03','10-10':'10-11','12-25':'12-27'}
 async def main():
