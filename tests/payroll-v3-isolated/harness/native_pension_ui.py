@@ -7,7 +7,7 @@ import argparse, hashlib, json, os, pathlib, socket, threading, traceback, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
-EXPECTED='b0b9d095842e2e67c366a8c53d3346fbe9c5bbb70250ae3ac93c4e314b16f5d9'
+EXPECTED='388620bb25f64db6245bf187d4bbe64c6e78a22920f4509e9577cf65e0ceb837'
 def need(value, msg):
  if not value: raise AssertionError(msg)
 
