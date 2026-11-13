@@ -2,7 +2,7 @@
 Requires Playwright/Chromium from official pinned CI dependencies. Never use --no-sandbox.
 This script was syntax-checked locally, NOT executed in the local environment.
 """
-import argparse, asyncio, hashlib, http.server, json, os, pathlib, threading
+import argparse, asyncio, hashlib, http.server, json, os, pathlib, threading, subprocess
 from playwright.async_api import async_playwright
 from urllib.parse import urlsplit
 EXPECTED='b0b9d095842e2e67c366a8c53d3346fbe9c5bbb70250ae3ac93c4e314b16f5d9'
@@ -13,7 +13,11 @@ async def main():
     html=pathlib.Path(args.html).resolve();out=pathlib.Path(args.out).resolve();out.mkdir(parents=True,exist_ok=True)
     assert hashlib.sha256(html.read_bytes()).hexdigest()==EXPECTED
     assert os.getuid()!=0, 'must run as non-root'
-    assert set(os.listdir('/sys/class/net'))=={'lo'}, 'requires loopback-only network namespace'
+    # sysfs can remain mounted from the host; query this process network namespace.
+    links=json.loads(subprocess.check_output(['ip','-j','link'],text=True))
+    routes=json.loads(subprocess.check_output(['ip','-j','route'],text=True))
+    assert {x['ifname'] for x in links}=={'lo'}, 'requires loopback-only network namespace'
+    assert routes==[], 'routes forbidden'
     assert len(pathlib.Path('/proc/net/route').read_text().strip().splitlines())==1, 'routes forbidden'
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
