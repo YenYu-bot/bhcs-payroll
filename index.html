@@ -38,6 +38,14 @@ nav.steps{background:var(--paper);border-bottom:1px solid var(--line);position:s
 .step:hover{color:var(--ink)}
 .step.active{color:var(--accent-dk);border-bottom-color:var(--accent)}
 .step.active .n{background:var(--accent);color:#fff}
+.step[data-v="calendar"]{color:var(--accent-dk);font-weight:750}
+.cal-hub-head{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;margin-bottom:16px}
+.cal-hub-head .f{min-width:160px}
+.cal-hub-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:16px 0}
+.cal-hub-person{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--paper);display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.cal-hub-person h3,.cal-hub-person p{margin:0;overflow-wrap:anywhere}
+.cal-hub-person p{color:var(--ink-soft);line-height:1.55}
+.cal-hub-days{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:5px 24px;padding-left:24px}
 
 main{max-width:1220px;margin:0 auto;padding:26px 22px 80px}
 .view{display:none;animation:fade .25s ease}
@@ -298,6 +306,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
 <nav inert class="steps">
   <div class="steps-inner" id="stepNav">
     <button class="step active" data-v="emp"><span class="n">1</span>員工設定</button>
+    <button class="step" data-v="calendar">2027 行事曆</button>
     <button class="step" data-v="att"><span class="n">2</span>出勤上傳</button>
     <button class="step" data-v="leaveDesk"><span class="n">3</span>請假登記</button>
     <button class="step" data-v="adj"><span class="n">4</span>本月核算</button>
@@ -316,6 +325,17 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
   <span id="saveBannerTxt"></span> <button class="btn ghost sm" onclick="save()">重試儲存</button> <button class="btn ghost sm" onclick="exportData()">匯出目前資料</button></div>
 <div id="cloudBanner" class="no-print" style="display:none;align-items:center;gap:12px;background:#fff4e5;border:1px solid #f0c27b;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13.5px">
   <span id="cloudBannerTxt" style="flex:1"></span><button class="btn primary sm" onclick="cloudReload()">載入雲端版本</button><button class="btn ghost sm" onclick="cloudOverwrite()">以本機覆蓋雲端</button></div>
+
+<section class="view no-print" id="v-calendar" aria-labelledby="calHubTitle">
+  <h2 class="vh" id="calHubTitle">2027 行事曆</h2>
+  <p class="vlead">16 個法定節日已內建，不需要匯入檔案。選擇員工設定實際放假日，再依實際出勤核對各月。</p>
+  <div class="cal-hub-head">
+    <div class="f"><label for="calHubMonth">要核對的月份</label><select id="calHubMonth" onchange="renderCalendarHub()"></select></div>
+    <p class="muted">這裡選月份不會改動上方的計薪月份。</p>
+  </div>
+  <div id="calHubPeople" class="cal-hub-grid"></div>
+  <details class="note"><summary>查看 16 個法定節日原始日期</summary><ul class="cal-hub-days" id="calHubDays"></ul><p>這是法定原日，不是政府辦公日曆，也不代表每位員工的補假日期。</p></details>
+</section>
 
 <!-- 1. 員工設定 -->
 <section class="view on" id="v-emp">
@@ -900,7 +920,7 @@ $('stepNav').addEventListener('click',ev=>{const b=ev.target.closest('.step');if
   document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));b.classList.add('active');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));$('v-'+b.dataset.v).classList.add('on');renderActive();});
 function activeView(){const v=document.querySelector('.view.on');return v?v.id.slice(2):'emp';}
-function renderActive(){const v=activeView();if(v==='emp')renderEmp();if(v==='att')renderAtt();if(v==='leaveDesk')renderLeaveDesk();if(v==='adj')renderAdj();if(v==='slip')renderSlips();if(v==='leave'){renderLeave();renderQuick();}if(v==='history')renderHistory();}
+function renderActive(){const v=activeView();if(v==='emp')renderEmp();if(v==='calendar')renderCalendarHub();if(v==='att')renderAtt();if(v==='leaveDesk')renderLeaveDesk();if(v==='adj')renderAdj();if(v==='slip')renderSlips();if(v==='leave'){renderLeave();renderQuick();}if(v==='history')renderHistory();}
 
 /* ===== 請假登記 UI ===== */
 let ldRenderedMonth='',ldBusy=false;
@@ -1072,6 +1092,26 @@ function monthLeave(e,r){const A=dayAgg(e,r),a=r.att;const k=x=>(+a[x]||0)+A.lea
 /* 2027 員工行事曆：只支援已核對的勞基法固定國定日；特殊假日、跨年與不規則班表仍擋。 */
 const CAL27_VERSION='2027-fixed16-v1';
 const CAL27_DAYS=[['01-01','開國紀念日'],['02-04','小年夜'],['02-05','除夕'],['02-06','春節初一'],['02-07','春節初二'],['02-08','春節初三'],['02-28','和平紀念日'],['04-04','兒童節'],['04-05','清明節'],['05-01','勞動節'],['06-09','端午節'],['09-15','中秋節'],['09-28','孔子誕辰紀念日／教師節'],['10-10','國慶日'],['10-25','臺灣光復暨金門古寧頭大捷紀念日'],['12-25','行憲紀念日']].map(([d,name])=>({date:'2027-'+d,name}));
+function calendarHubMonth(){
+  const m=Number($('calHubMonth').value);
+  return Number.isInteger(m)&&m>=1&&m<=12?ymKey(2027,m):'2027-01';
+}
+function renderCalendarHub(){
+  const pick=$('calHubMonth'),here=curYM();
+  if(!pick.options.length){
+    pick.innerHTML=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'">'+(i+1)+' 月</option>').join('');
+    pick.value=here.startsWith('2027-')?String(Number(here.slice(5))):'1';
+  }
+  const ym=calendarHubMonth();
+  $('calHubDays').innerHTML=CAL27_DAYS.map(d=>'<li>'+esc(d.date)+' '+esc(d.name)+'</li>').join('');
+  $('calHubPeople').innerHTML=state.employees.length?state.employees.map(e=>{
+    const rec=state.months[ym]?.[e.id],confirmed=!!rec?.confirmed,annual=calendarPlan(e);
+    const annualStatus=calendarLocked(e)?'年度設定已鎖定':!annual?'年度設定尚未完成':calendarPlanIssues(e,annual).length?'年度設定需重新核對':'年度設定已儲存';
+    const monthStatus=confirmed?'本月薪資已確認':rec?.calendarReview?.verified&&rec.calendarReview.sig===calendarMonthSig(e,ym,rec)?'本月已核對':'本月待核對';
+    return '<article class="cal-hub-person"><h3>'+esc(e.name)+'</h3><p>'+annualStatus+'｜'+monthStatus+'</p><button class="btn '+(confirmed?'ghost':'primary')+' sm" type="button" data-eid="'+esc(e.id)+'" onclick="openCalendarFromHub(this)"'+(confirmed?' disabled':'')+'>'+ (confirmed?'本月已鎖定':'設定放假日／核對本月')+'</button></article>';
+  }).join(''):'<p class="note">目前沒有員工。請先到「員工設定」新增員工，或用原本計薪的瀏覽器開啟。</p>';
+}
+function openCalendarFromHub(button){openCalendar(button.dataset.eid,calendarHubMonth(),true);}
 function calendarPlan(e){return e&&e.calendarPlans&&e.calendarPlans['2027'];}
 function calDate(d){return typeof d==='string'&&/^2027-\d{2}-\d{2}$/.test(d)&&pd(d)!=null&&fd(pd(d))===d;}
 function calEmployed(e,d){return (pd(e.hire)==null||pd(d)>=pd(e.hire))&&(pd(e.leave)==null||pd(d)<=pd(e.leave));}
@@ -1137,12 +1177,12 @@ function recordCalendarPlan(e,p){if(calendarLocked(e))throw Error('2027 已有�
 function recordCalendarReview(e,ym,r,note,reviewer,special,irregular){if(r.confirmed)throw Error('已確認薪資不可改行事曆核對');const issues=calendarMonthIssues(e,ym,r,true);if(issues.length)throw Error(issues.join('；'));if(special!=='noneThisMonth'||irregular!==false||!String(note||'').trim()||!String(reviewer||'').trim())throw Error('適用特殊假日、個別輪班或缺核對依據者暫不可解除');const prev=r.calendarReview;r.calendarReview={verified:true,sig:calendarMonthSig(e,ym,r),note:String(note).trim(),reviewer:String(reviewer).trim(),special,irregular,checkedAt:new Date().toISOString(),history:prev?[...(prev.history||[]),Object.fromEntries(Object.entries(prev).filter(([k])=>k!=='history'))]:[]};return r.calendarReview;}
 function revokeCalendarReview(e,ym,r){if(r.confirmed)throw Error('已確認薪資不可撤銷核對');if(r.calendarReview)r.calendarReview={...r.calendarReview,verified:false,revokedAt:new Date().toISOString()};}
 let calendarDialog=null;
-function openCalendar(eid){const e=emp(eid),ym=curYM(),r=mrec(eid);if(!e||!ym.startsWith('2027-')||r.confirmed)return;calendarDialog={eid,ym,epoch:dataEpoch,input:inputGeneration,signature:calendarSourceSig(e),monthSig:calendarMonthSig(e,ym,r),focus:document.activeElement};let modal=$('calendarModal');if(!modal){modal=document.createElement('div');modal.id='calendarModal';modal.className='overlay';modal.addEventListener('click',ev=>{if(ev.target===modal)closeCalendarDialog();});modal.addEventListener('keydown',ev=>{if(ev.key==='Escape'){ev.preventDefault();closeCalendarDialog();}if(ev.key==='Tab'){const a=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(a.length){const first=a[0],last=a[a.length-1];if(ev.shiftKey&&document.activeElement===first){ev.preventDefault();last.focus();}else if(!ev.shiftKey&&document.activeElement===last){ev.preventDefault();first.focus();}}}});document.body.appendChild(modal);}const p=calendarPlan(e)||{rows:[]},locked=calendarLocked(e),dis=locked?' disabled':'';
+function openCalendar(eid,ym=curYM(),fromHub=false){const e=emp(eid);if(!e||!/^2027-(0[1-9]|1[0-2])$/.test(ym)||sec.locked||sec.locking||!localDB.ready||persistence.loadBlocked||persistence.external||persistence.freezeCount)return;const r=peekRec(eid,ym)||blankRec();if(r.confirmed)return;calendarDialog={eid,ym,fromHub,epoch:dataEpoch,input:inputGeneration,signature:calendarSourceSig(e),monthSig:calendarMonthSig(e,ym,r),focus:document.activeElement};let modal=$('calendarModal');if(!modal){modal=document.createElement('div');modal.id='calendarModal';modal.className='overlay';modal.addEventListener('click',ev=>{if(ev.target===modal)closeCalendarDialog();});modal.addEventListener('keydown',ev=>{if(ev.key==='Escape'){ev.preventDefault();closeCalendarDialog();}if(ev.key==='Tab'){const a=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(a.length){const first=a[0],last=a[a.length-1];if(ev.shiftKey&&document.activeElement===first){ev.preventDefault();last.focus();}else if(!ev.shiftKey&&document.activeElement===last){ev.preventDefault();first.focus();}}}});document.body.appendChild(modal);}const p=calendarPlan(e)||{rows:[]},locked=calendarLocked(e),dis=locked?' disabled':'';
  modal.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-label="2027員工行事曆核對" style="max-width:1100px;max-height:90vh;overflow:auto;padding:20px"><h3>2027 員工年度行事曆 · '+esc(e.name)+'</h3><p>不自動改全域假日或既有出勤。固定週班表專用；原住民族歲時祭儀、投票日及其他特殊假日適用月份、個別輪班、跨年調移尚未支援，請勿勾選不實資料解除。年內任何月薪資確認後，本年度映射鎖定。</p><p>依據：<a href="https://www.mol.gov.tw/1607/28162/28166/28218/28226/81488/" target="_blank" rel="noopener">勞動部國定假日與補假說明</a>。16 日僅作勞基法適用者參照，不代表每人皆在職或排班。</p><label><input id="calCoverage" type="checkbox"'+(p.coverage==='lsa'&&p.regularSchedule===true?' checked':'')+dis+'>已核對本人適用勞基法、採系統所列固定週班表（非不規則輪班）</label><p>週班表：'+esc(Array.from({length:7},(_,i)=>WK[i]+':'+DAYTYPE[schedDay(e.sched,i).type]).join('、'))+'</p><label>年度核對來源／紀錄（勿填身分證號或帳號）<input id="calBasis" value="'+esc(p.basis||'')+'"'+dis+' style="width:100%"></label><table><thead><tr><th>法定原日</th><th>當日原班別</th><th>處理</th><th>實際放假日</th><th>本人同意調移</th><th>依據／備註</th></tr></thead><tbody>'+CAL27_DAYS.map((s,i)=>{const x=p.rows.find(x=>x.source===s.date)||{mode:'',target:'',note:''};return '<tr><td>'+s.date+' '+s.name+'</td><td>'+esc(DAYTYPE[calType(e,s.date)]||'未知')+'</td><td><select id="calMode'+i+'"'+dis+'>'+[['','待核對'],['original','原日放假'],['substitute','遇例休另補假'],['transfer','本人協議調移'],['outside','非任職期間']].map(([v,n])=>'<option value="'+v+'"'+(x.mode===v?' selected':'')+'>'+n+'</option>').join('')+'</select></td><td><input type="date" id="calTarget'+i+'" value="'+esc(x.target||'')+'"'+dis+'></td><td><input type="checkbox" id="calConsent'+i+'"'+(x.consent?' checked':'')+dis+'></td><td><input id="calNote'+i+'" value="'+esc(x.note||'')+'"'+dis+'></td></tr>';}).join('')+'</tbody></table><p><button class="btn primary" onclick="saveCalendarDialog()"'+dis+'>儲存年度映射（本月仍須核對）</button> <button class="btn" onclick="closeCalendarDialog()">取消／關閉</button></p><hr><p>本月 '+esc(ym)+' 請先依已保存映射產生出勤並核對分類，再完成以下核對。任何出勤、班表或來源異動都會失效。</p><p>'+esc(calendarMonthIssues(e,ym,r,true).slice(0,8).join('；')||'日期與班別結構檢查通過，仍須本人核實事實')+'</p><label>核對人<input id="calReviewer"></label><label>本月核對依據<input id="calMonthNote" style="width:100%"></label><label><input type="checkbox" id="calSpecial">已核對本月無適用的額外投票日／歲時祭儀日或其他特殊國定假日</label><br><label><input type="checkbox" id="calRegular">本月沒有與所列固定週班表不同的個別輪班／例休日調移；假別及加班皆以逐日出勤填寫</label><p><button class="btn primary" onclick="confirmCalendarDialog()">個別核對本月</button> <button class="btn danger" onclick="revokeCalendarDialog()">撤銷本月核對</button></p></div>';modal.classList.add('on');const focus=modal.querySelector('input:not([disabled]),button:not([disabled])');if(focus)focus.focus();}
-function calendarDialogContext(){const z=calendarDialog;if(!z||z.ym!==curYM()||z.epoch!==dataEpoch||sec.locked||persistence.loadBlocked||persistence.external||persistence.freezeCount||!localDB.ready)throw Error('資料或鎖定狀態已改變，請重新開啟行事曆');const e=emp(z.eid),r=mrec(z.eid,z.ym);if(!e||r.confirmed||z.signature!==calendarSourceSig(e)||z.monthSig!==calendarMonthSig(e,z.ym,r))throw Error('員工／班表／出勤已變更或薪資已確認，請重新開啟');return {z,e,r};}
+function calendarDialogContext(){const z=calendarDialog;if(!z||(z.fromHub?(activeView()!=='calendar'||z.ym!==calendarHubMonth()):z.ym!==curYM())||z.epoch!==dataEpoch||z.input!==inputGeneration||sec.locked||sec.locking||persistence.loadBlocked||persistence.external||persistence.freezeCount||!localDB.ready)throw Error('資料或鎖定狀態已改變，請重新開啟行事曆');const e=emp(z.eid),r=peekRec(z.eid,z.ym)||blankRec();if(!e||r.confirmed||z.signature!==calendarSourceSig(e)||z.monthSig!==calendarMonthSig(e,z.ym,r))throw Error('員工／班表／出勤已變更或薪資已確認，請重新開啟');return {z,e,r};}
 function closeCalendarDialog(){const target=calendarDialog&&calendarDialog.focus;if($('calendarModal'))$('calendarModal').classList.remove('on');calendarDialog=null;if(target&&target.isConnected&&target.focus)target.focus();}
 function saveCalendarDialog(){try{const {z,e}=calendarDialogContext();const p={version:CAL27_VERSION,coverage:$('calCoverage').checked?'lsa':'',regularSchedule:$('calCoverage').checked,basis:$('calBasis').value,rows:CAL27_DAYS.map((s,i)=>({source:s.date,mode:$('calMode'+i).value,target:$('calTarget'+i).value,consent:$('calConsent'+i).checked,note:$('calNote'+i).value}))};recordCalendarPlan(e,p);addLog('儲存年度假日映射','2027 版本 '+calendarPlan(e).revision,z.ym,e.id);save();closeCalendarDialog();renderActive();toast('已儲存；請先核對出勤分類，再開啟本月個別核對');}catch(err){toast(err.message);}}
-function confirmCalendarDialog(){try{const {z,e,r}=calendarDialogContext();const p=calendarPlan(e);if(!p||$('calCoverage').checked!==(p.coverage==='lsa'&&p.regularSchedule===true)||$('calBasis').value!==p.basis||CAL27_DAYS.some((src,i)=>{const x=p.rows.find(x=>x.source===src.date);return !x||$('calMode'+i).value!==x.mode||$('calTarget'+i).value!==(x.target||'')||$('calConsent'+i).checked!==!!x.consent||$('calNote'+i).value!==x.note;}))throw Error('年度欄位有未儲存變更，請先儲存再重新核對');recordCalendarReview(e,z.ym,r,$('calMonthNote').value,$('calReviewer').value,$('calSpecial').checked?'noneThisMonth':'unknown',$('calRegular').checked?false:true);addLog('核對本月行事曆','2027 固定班表；'+r.calendarReview.note,z.ym,e.id);save();closeCalendarDialog();renderActive();}catch(err){toast(err.message);}}
+function confirmCalendarDialog(){try{const {z,e,r}=calendarDialogContext();const p=calendarPlan(e);if(!p||$('calCoverage').checked!==(p.coverage==='lsa'&&p.regularSchedule===true)||$('calBasis').value!==p.basis||CAL27_DAYS.some((src,i)=>{const x=p.rows.find(x=>x.source===src.date);return !x||$('calMode'+i).value!==x.mode||$('calTarget'+i).value!==(x.target||'')||$('calConsent'+i).checked!==!!x.consent||$('calNote'+i).value!==x.note;}))throw Error('年度欄位有未儲存變更，請先儲存再重新核對');recordCalendarReview(e,z.ym,mrec(e.id,z.ym),$('calMonthNote').value,$('calReviewer').value,$('calSpecial').checked?'noneThisMonth':'unknown',$('calRegular').checked?false:true);addLog('核對本月行事曆','2027 固定班表；'+r.calendarReview.note,z.ym,e.id);save();closeCalendarDialog();renderActive();}catch(err){toast(err.message);}}
 function revokeCalendarDialog(){try{const {z,e,r}=calendarDialogContext();revokeCalendarReview(e,z.ym,r);addLog('撤銷行事曆核對','須重新核對',z.ym,e.id);save();closeCalendarDialog();renderActive();}catch(err){toast(err.message);}}
 function calendarReviewBlock(e,c){if(!curYM().startsWith('2027-')||c.locked)return '';return '<div class="note no-print"><b>2027 員工行事曆核對</b><p>年度原始節日、跨月補假與本人調移須逐筆確認，並核對本月實際出勤。<button class="btn ghost tiny" onclick="openCalendar('+esc(JSON.stringify(e.id))+')">開啟年度映射／本月核對</button></p></div>';}
 
