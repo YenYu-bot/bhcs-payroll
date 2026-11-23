@@ -1,0 +1,44 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const src=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8').split('<script>')[1].split('</script>')[0];
+const end=src.indexOf('function bootUI()');
+assert(end>0);
+const node={appendChild(){},addEventListener(){},querySelectorAll(){return[]},classList:{add(){},remove(){}},style:{}};
+const context={document:{createElement:()=>({}),getElementById:()=>node,addEventListener(){},querySelectorAll:()=>[],querySelector:()=>node},window:{addEventListener(){}},localStorage:{getItem:()=>null},console,TextEncoder,TextDecoder,setTimeout,clearTimeout,setInterval,clearInterval,Intl,location:{origin:'http://127.0.0.1'}};
+vm.createContext(context);
+vm.runInContext(src.slice(0,end),context);
+const setup=`(ym, patch={}, employee={})=>{
+ state={version:3,settings:DEF_SETTINGS(),employees:[],months:{}};
+ const e={id:'fixture',name:'合成測試',payType:'monthly',base:36000,perfect:0,summer:0,otFixed:0,labor:0,health:0,fixedItems:[],hire:'2024-01-01',leaveSystem:'cal',yearEnd:'pay',sched:defaultSched()};
+ Object.assign(e,employee);
+ const r=blankRec();r.schoolPay={ym,mode:'academic',start:'',end:'',allowance:4000,attendance:0,cut:0,basis:'合成資料',fridays:[],bonus:null,bonusNote:'',bonusBasis:'',...patch};
+ state.employees.push(e);state.months[ym]={[e.id]:r};return {e,r};
+}`;
+vm.runInContext('const setup='+setup+'; const earningValue=(c,l)=>c.earnings.find(x=>x[0]===l)?.[1]; const event=(date,hours=3,type="rest")=>({date,hours,type});',context);
+const tests={
+ '5 個週六、基礎 36,000：法定 3,250、定額 4,000':`const {e,r}=setup('2026-08');r.otEvents=[1,8,15,22,29].map(d=>event('2026-08-'+String(d).padStart(2,'0')));const c=computeLive(e,'2026-08',r);return [c.gross,c.ot.pay,earningValue(c,'休息日定額加班費'),earningValue(c,'休息日加班補差額')]`,
+ '完整寒暑假：津貼 4,000 且加班基礎 40,000':`const {e,r}=setup('2026-07',{start:'2026-07-01',end:'2026-07-31'});r.otEvents=[event('2026-07-08',2,'weekday')];const c=computeLive(e,'2026-07',r);return [earningValue(c,'寒暑期教學津貼'),earningValue(c,'休息日定額加班費'),earningValue(c,'加班費'),c.gross]`,
+ '2 月兩個週六：加班 1,395、津貼 2,605':`const {e,r}=setup('2026-02',{start:'2026-02-01',end:'2026-02-14'});r.otEvents=[event('2026-02-21'),event('2026-02-28')];const c=computeLive(e,'2026-02',r);return [c.gross,c.hr,earningValue(c,'寒暑期教學津貼'),earningValue(c,'休息日加班費（寒假優先）'),earningValue(c,'休息日加班補差額')]`,
+ '週五 6.5 小時、四個週六：補 125':`const {e,r}=setup('2027-04',{fridays:['2027-04-30']});r.otEvents=[3,10,17,24].map(d=>event('2027-04-'+String(d).padStart(2,'0'))).concat(event('2027-04-30',6.5));const c=computeLive(e,'2027-04',r);return [earningValue(c,'休息日加班補差額'),c.settlementBlocked,c.leavePayrollBlocks.some(x=>x.includes('週五'))]`,
+ '其他平日加班不能由休息日定額吸收':`const {e,r}=setup('2026-08');r.otEvents=[event('2026-08-01'),event('2026-08-03',2,'weekday')];const c=computeLive(e,'2026-08',r);return [earningValue(c,'加班費'),earningValue(c,'休息日定額加班費'),c.gross]`,
+ '月累 15 分仍全勤、16 分取消一次不扣特休':`const {e,r}=setup('2026-08',{attendance:1000,cut:1000},{lateePolicy:'annualOffset'});r.lateEvents=[{date:'2026-08-03',late:15}];const a=computeLive(e,'2026-08',r);r.lateEvents[0].early=1;r.att.personal=1;const b=computeLive(e,'2026-08',r);return [earningValue(a,'全勤獎金'),earningValue(b,'全勤獎金'),b.late.offsetDays,b.late.deduct,usageItems(e,Date.UTC(2026,8,1)).filter(x=>x.kind==='late').length]`,
+ '照顧家人事假不觸發、普通病假依比例':`const {e,r}=setup('2026-08',{attendance:1000,cut:1000});r.att.carePersonal=8;const a=computeLive(e,'2026-08',r);r.att.sick=8;const b=computeLive(e,'2026-08',r);return [earningValue(a,'全勤獎金'),earningValue(b,'全勤獎金')]`,
+ '6 月續班可留空；填金額後要核對歸屬與資料':`const {e,r}=setup('2026-06');const a=computeLive(e,'2026-06',r);r.schoolPay.bonus=3000;const b=computeLive(e,'2026-06',r);r.schoolPay.bonusNote='合成名冊';r.schoolPay.bonusBasis='include';const c=computeLive(e,'2026-06',r);return [earningValue(a,'續班獎金'),b.leavePayrollBlocks.some(x=>x.includes('名冊')),b.leavePayrollBlocks.some(x=>x.includes('歸屬')),earningValue(c,'續班獎金'),c.hr]`,
+ '非 6、12 月不可放入續班獎金':`const {e,r}=setup('2026-05',{bonus:3000,bonusNote:'名冊',bonusBasis:'include'});const c=computeLive(e,'2026-05',r);return [earningValue(c,'續班獎金'),c.leavePayrollBlocks.some(x=>x.includes('6 月'))]`,
+ '6 月續班獎金不動在途特休；12 月應結可與獎金並列':`let {e,r}=setup('2026-06',{mode:'standard',bonus:3000,bonusNote:'名冊',bonusBasis:'include',annualDay:1250,annualNote:'核對日薪'});const a=computeLive(e,'2026-06',r);({e,r}=setup('2026-12',{mode:'standard',bonus:3000,bonusNote:'名冊',bonusBasis:'include',annualDay:1250,annualNote:'核對日薪'}));const b=computeLive(e,'2026-12',r);return [earningValue(a,'特休未休工資'),earningValue(a,'續班獎金'),b.annualPay===b.payDays*1250&&b.payDays>0,earningValue(b,'續班獎金'),b.reviews.find(x=>x.key==='annualPay')?.ack]`,
+ '日期缺漏與手動覆寫阻擋正式確認':`const {e,r}=setup('2026-08');r.otEvents=[event('')];r.overrides['休息日加班補差額']=0;const c=computeLive(e,'2026-08',r);return [c.settlementBlocked,c.leavePayrollBlocks.some(x=>x.includes('有效日期')),c.leavePayrollBlocks.some(x=>x.includes('手動覆寫'))]`,
+ '既有已鎖確認快照不重算':`const {e,r}=setup('2026-08');r.confirmed=true;r.snapshot={gross:12345,earnings:[['底薪',12345]]};e.base=99999;const c=compute(e,'2026-08');return [c.gross,c.locked,c.earnings.length]`,
+ '未選用則保留通用加班／津貼及原有設定':`const {e,r}=setup('2026-08',{}, {summer:500,otFixed:2000});delete r.schoolPay;r.otEvents=[event('2026-08-03',2,'weekday')];const c=computeLive(e,'2026-08',r);return [c.gross,earningValue(c,'暑期津貼'),earningValue(c,'加班費'),c.customE.length]`,
+ '課輔行政方案不套學科班定額或寒暑期拆分':`const {e,r}=setup('2026-08',{mode:'standard',attendance:1000,cut:1000},{summer:500,otFixed:0});r.otEvents=[event('2026-08-03',2,'weekday')];const c=computeLive(e,'2026-08',r);return [earningValue(c,'暑期津貼'),earningValue(c,'全勤獎金'),earningValue(c,'休息日定額加班費')??null,earningValue(c,'加班費')]`,
+ '1 月寒假有兩個週六且全勤：全勤先納入工資基礎':`const {e,r}=setup('2026-01',{start:'2026-01-19',end:'2026-01-31',attendance:1000,cut:1000});r.otEvents=[event('2026-01-10'),event('2026-01-17')];const c=computeLive(e,'2026-01',r);return [c.gross,earningValue(c,'休息日加班費（寒假優先）'),earningValue(c,'寒暑期教學津貼'),earningValue(c,'全勤獎金')]`,
+ '全月寒假未加班：全額津貼、沒有休息日加班費':`const {e,r}=setup('2026-02',{start:'2026-02-01',end:'2026-02-28'});const c=computeLive(e,'2026-02',r);return [c.gross,earningValue(c,'休息日加班費（寒假優先）'),earningValue(c,'寒暑期教學津貼')]`,
+ '寒假週六與平日加班都在月額之外':`const {e,r}=setup('2026-01',{start:'2026-01-19',end:'2026-01-31'});r.otEvents=[event('2026-01-17'),event('2026-01-24'),event('2026-01-20',2,'weekday')];const c=computeLive(e,'2026-01',r);return [earningValue(c,'休息日加班費（寒假優先）'),earningValue(c,'寒暑期教學津貼'),earningValue(c,'加班費'),c.gross]`,
+ '寒假休息日加班超過月額：津貼為零並足額補差':`const {e,r}=setup('2026-01',{start:'2026-01-29',end:'2026-01-31'});r.otEvents=[3,10,17,24].map(d=>event('2026-01-'+String(d).padStart(2,'0'),5));const c=computeLive(e,'2026-01',r);return [earningValue(c,'休息日加班費（寒假優先）'),earningValue(c,'寒暑期教學津貼'),earningValue(c,'休息日加班補差額'),c.gross]`,
+ '1 月全為學期仍沿用學期定額':`const {e,r}=setup('2026-01');r.otEvents=[event('2026-01-17')];const c=computeLive(e,'2026-01',r);return [earningValue(c,'休息日定額加班費'),earningValue(c,'寒暑期教學津貼'),c.gross]`,
+ '跨月寒假中的調移週五為合格試算，未移除 2027 正式確認閘門':`const {e,r}=setup('2027-02',{start:'2027-02-01',end:'2027-02-10',fridays:['2027-02-12']});r.otEvents=[event('2027-02-20'),event('2027-02-12',6.5)];const c=computeLive(e,'2027-02',r);return [c.gross,earningValue(c,'休息日加班費（寒假優先）'),earningValue(c,'寒暑期教學津貼'),c.settlementBlocked]`,
+ '整元分配公式與逐元核對一致':`let n=0;for(const pool of [0,1,100,4000])for(const normal of [29000,36000,37000,42000])for(const factor of [0,0.27,2.67,8.67,14.5,28,50]){let x=0;while(x<pool&&x+1e-8<(normal+pool-x)*factor/240)x++;const v=schoolPrioritySplit(pool,normal,factor);if(v.fixed!==x||v.allowance+v.fixed!==pool)throw new Error([pool,normal,factor,x,v.fixed].join());n++;}return n;`,
+ '審核隨工時異動失效':`const {e,r}=setup('2026-08');let c=computeLive(e,'2026-08',r);r.reviews.schoolRules={d:'ok',v:c.reviews.find(x=>x.key==='schoolRules').sig};c=computeLive(e,'2026-08',r);r.otEvents=[event('2026-08-01')];const changed=computeLive(e,'2026-08',r);return [c.reviews.find(x=>x.key==='schoolRules').st,changed.reviews.find(x=>x.key==='schoolRules').st]`,
+};
+const expected=[[40000,3250,4000,0],[4000,0,445,40445],[40000,38605/240,2605,1395,0],[125,true,true],[400,4000,40400],[1000,0,0,0,0],[1000,967],[0,true,true,3000,39000/240],[0,true],[0,3000,true,3000,true],[true,true,true],[12345,true,1],[38500,500,2000,0],[500,1000,null,417],[41000,1429,2571,1000],[40000,0,4000],[710,3290,1146,41146],[4000,0,600,40600],[4000,0,40000],[40000,2279,1721,true],112,['ok','pending']];
+let i=0;for(const [name,body] of Object.entries(tests)){const out=JSON.parse(vm.runInContext('JSON.stringify((()=>{'+body+'})())',context));assert.deepEqual(out,expected[i++],name);console.log('PASS',name);}
+console.log(i+' passed');
