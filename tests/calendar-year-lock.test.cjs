@@ -44,7 +44,7 @@ assert.equal(baseline.confirmedView.locked,true);
 assert.equal(baseline.confirmedView.net,36000);
 const freezeOutputs=async()=>{
  get('pMonth').value='1';
- run('output=[];exportExcel();exportWord();printPayroll()');
+ run("output=[];exportExcel();exportWord();{const old=[activeView,renderSlips];try{activeView=()=> 'slip';renderSlips=()=>{};printPayroll();}finally{[activeView,renderSlips]=old;}}");
  const files=run('output');
  assert.equal(files.length,3);
  return Promise.all(files.map(async({name,blob})=>({name,bytes:blob?Buffer.from(await blob.arrayBuffer()).toString('base64'):null})));
@@ -111,7 +111,7 @@ assert.match(t('calendarMonthIssues(e,"2027-09",blankRec(),true).join(";")'),/20
 assert.equal(t('employeeHolidaySet(e).has("2027-01-01")'),true,'June departure cannot remove earlier live holiday');
 assert.match(t('employeeHolidayName(e,"2027-01-01")'),/元旦|開國/);
 assert.equal(t('setConfirm(e.id,true)'),false,'future-stale leave/attendance is not silently approved');
-run('output=[];exportExcel();exportWord();printPayroll()');
+run("output=[];exportExcel();exportWord();{const old=[activeView,renderSlips];try{activeView=()=> 'slip';renderSlips=()=>{};printPayroll();}finally{[activeView,renderSlips]=old;}}");
 assert.equal(t('output.length'),0,'no actual document download or print accepted while June is blocked');
 assert.deepEqual(takeState().january,baseline.january);
 assert.deepEqual(takeState().confirmedView,baseline.confirmedView);
