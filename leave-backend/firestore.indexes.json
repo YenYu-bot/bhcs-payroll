@@ -1,0 +1,4 @@
+{
+  "indexes":[{"collectionGroup":"leaveRequests","queryScope":"COLLECTION","fields":[{"fieldPath":"owner","order":"ASCENDING"},{"fieldPath":"date","order":"DESCENDING"}]}],
+  "fieldOverrides":[{"collectionGroup":"leaveProof","fieldPath":"jpeg","indexes":[]}]
+}

@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function enabled() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/leaveMembers/$(request.auth.uid))
+        && member().active == true;
+    }
+    function member() {
+      return get(/databases/$(database)/documents/leaveMembers/$(request.auth.uid)).data;
+    }
+    function staff() { return enabled() && member().role == 'staff'; }
+    function manager() { return enabled() && member().role == 'manager'; }
+    function canRead(owner) { return manager() || (staff() && owner == request.auth.uid); }
+    function req(id) { return get(/databases/$(database)/documents/leaveRequests/$(id)).data; }
+    function nextReq(id) { return getAfter(/databases/$(database)/documents/leaveRequests/$(id)).data; }
+    function photo(id) { return /databases/$(database)/documents/leaveProof/$(id); }
+    function hasReviewFields(d) {
+      return d.reviewBy == request.auth.uid && d.reviewAt == request.time;
+    }
+    function validNew(d) {
+      return d.keys().hasAll(['owner','employeeId','employeeLabel','date','type','minutes','start','end','status','createdAt','proofRequired'])
+        && d.keys().hasOnly(['owner','employeeId','employeeLabel','date','type','minutes','start','end','status','createdAt','proofRequired'])
+        && d.owner == request.auth.uid && d.employeeId == member().employeeId && d.employeeLabel == member().label
+        && d.date is string && d.date.matches('20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])')
+        && d.type in ['annual','sick','personal','family','carePersonal','paidLeave','menstrual','protectedSick']
+        && d.minutes is int && d.minutes >= 0 && d.minutes <= 480
+        && ((d.minutes == 0 && d.start == '' && d.end == '') ||
+          (d.minutes > 0 && d.start is string && d.end is string
+          && d.start.matches('([01][0-9]|2[0-3]):[0-5][0-9]') && d.end.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+          && d.start < d.end))
+        && d.proofRequired == false && d.status == 'pending' && d.createdAt == request.time;
+    }
+    match /leaveMembers/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+    }
+    match /leaveRequests/{id} {
+      allow get: if canRead(resource.data.owner);
+      allow list: if request.query.limit <= 200 && canRead(resource.data.owner);
+      allow create: if staff() && id.matches('[A-Za-z0-9]{20}') && validNew(request.resource.data);
+      allow update: if (staff() && resource.data.owner == request.auth.uid
+          && resource.data.status in ['pending','needsProof'] && request.resource.data.status == 'withdrawn'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','withdrawnAt'])
+          && request.resource.data.withdrawnAt == request.time)
+        || (manager() && reviewerUpdate(id));
+      function reviewerUpdate(id) {
+        let old = resource.data;
+        let d = request.resource.data;
+        let keys = d.diff(old).affectedKeys();
+        return (old.status in ['pending','needsProof'] && d.status in ['approved','rejected','needsProof']
+          && keys.hasOnly(['status','proofRequired','reviewAt','reviewBy']) && hasReviewFields(d)
+          && ((d.status == 'needsProof' && d.proofRequired == true && !exists(photo(id))) ||
+            (d.status == 'rejected' && d.proofRequired == old.proofRequired) ||
+            (d.status == 'approved' && d.proofRequired == old.proofRequired && (!old.proofRequired || exists(photo(id))))))
+          || (old.status == 'approved' && d.status in ['applied','manual']
+            && keys.hasOnly(['status','settledBy','settledAt']) && d.settledBy == request.auth.uid && d.settledAt == request.time);
+      }
+    }
+    match /leaveProof/{id} {
+      // Get only: no listing of proof. Reading authority always follows the parent.
+      allow get: if canRead(req(id).owner);
+      allow create: if staff() && nextReq(id).owner == request.auth.uid
+        && nextReq(id).status in ['pending','needsProof']
+        && request.resource.data.keys().hasAll(['jpeg','createdAt'])
+        && request.resource.data.keys().hasOnly(['jpeg','createdAt'])
+        && request.resource.data.createdAt == request.time && request.resource.data.jpeg is bytes
+        && request.resource.data.jpeg.size() > 3 && request.resource.data.jpeg.size() <= 650000;
+    }
+    // This project is separate from payroll; no client access to other collections.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

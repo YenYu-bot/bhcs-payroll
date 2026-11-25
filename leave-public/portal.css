@@ -1,0 +1,14 @@
+.leave-page{margin:0;background:#f0f5f6;color:#183139;font:16px/1.6 system-ui,sans-serif}
+.leave-shell{max-width:810px;margin:auto;padding:clamp(18px,5vw,48px)}
+.leave-shell h1{font-size:clamp(26px,4vw,38px);margin:0}
+.leave-shell header p{margin-top:4px}.leave-shell .eyebrow{font-size:.85rem;color:#3f6268;font-weight:700;letter-spacing:.09em}
+.leave-portal{padding:clamp(12px,3vw,24px);background:#fff;color:#183139;border:1px solid #cbdade;border-radius:14px}
+.leave-portal h3,.leave-portal h4{margin:0 0 10px}.leave-portal p{margin:6px 0 12px}
+.leave-portal form{display:grid;gap:10px;max-width:36em;margin-bottom:24px}
+.leave-portal label{display:grid;gap:4px;font-weight:650}
+.leave-portal button,.leave-portal input,.leave-portal select{font:inherit;min-height:44px;border:1px solid #789396;border-radius:8px;padding:6px 10px;color:#183139;background:#fff;max-width:100%;box-sizing:border-box}
+.leave-portal button{cursor:pointer;color:#fff;background:#105866;border-color:#105866;width:fit-content}.leave-portal button:disabled{opacity:.6;cursor:wait}
+.leave-portal button.alt{color:#183139;background:#f4f7f7;border-color:#789396}.leave-portal :focus-visible{outline:3px solid #9a5a07;outline-offset:2px}
+.leave-portal .lv-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.leave-portal .lv-record{border-top:1px solid #cbdade;padding:14px 0}.leave-portal .lv-status{font-weight:700}
+.leave-portal img{display:block;max-width:100%;max-height:70vh;object-fit:contain;margin:8px 0}.leave-portal [hidden]{display:none!important}

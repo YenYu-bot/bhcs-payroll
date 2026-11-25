@@ -517,6 +517,12 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
 <section class="view" id="v-leaveDesk" aria-labelledby="ldTitle">
   <h2 class="vh" id="ldTitle">請假登記</h2>
   <p class="vlead">選員工、日期與假別，存入出勤紀錄，不用再到薪資頁重複輸入。月份跟隨上方計薪月份。建議先匯入當月打卡，再補登請假。</p>
+  <div class="card pad" style="margin-bottom:14px">
+    <h3>員工線上假單</h3>
+    <p>主管專用。員工入口使用獨立網址；不在這裡登入或查薪資。</p>
+    <button class="btn ghost" id="leavePortalToggle" type="button" aria-controls="leavePortalManager" aria-expanded="false" onclick="toggleLeavePortal()">開啟主管審核</button>
+    <div id="leavePortalManager" class="leave-portal" hidden></div>
+  </div>
   <div class="leave-desk-layout">
     <div class="card pad">
       <h3>新增請假</h3>
@@ -2843,11 +2849,59 @@ function leaveDeskEntries(id){
   for(const k of LEAVE_ST)if(+(r.att||{})[k]>0)out.push({date:'',type:k,hours:+r.att[k],source:'手動補登（未分日）',editable:false});
   return out.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
 }
+let leavePortalStop=null, leavePortalRevision=0;
+function closeLeavePortal(){
+  leavePortalRevision++;
+  leavePortalStop?.();leavePortalStop=null;
+  const box=$('leavePortalManager'),toggle=$('leavePortalToggle');
+  if(box){box.replaceChildren();box.hidden=true;}
+  if(toggle){toggle.setAttribute('aria-expanded','false');toggle.textContent='開啟主管審核';}
+}
+async function toggleLeavePortal(){
+  const box=$('leavePortalManager'),toggle=$('leavePortalToggle');
+  if(!box.hidden){closeLeavePortal();return;}
+  if(sec.locked||!sec.key){toast('請先啟用薪資資料加密並解鎖。');return;}
+  const rev=++leavePortalRevision;box.hidden=false;box.textContent='正在開啟主管入口…';
+  toggle.setAttribute('aria-expanded','true');toggle.textContent='關閉主管審核';
+  try{
+    if(!document.getElementById('leavePortalCss')){
+      const css=document.createElement('link');css.id='leavePortalCss';css.rel='stylesheet';css.href='./leave-public/portal.css';document.head.append(css);
+    }
+    const mod=await import('./leave-public/portal.mjs');
+    if(rev!==leavePortalRevision)return;
+    const host=document.createElement('div');box.replaceChildren(host);
+    const stop=await mod.mountLeave(host,'manager',(request,id)=>rev===leavePortalRevision?leavePortalApply(request,id):{ok:false,error:'主管畫面已關閉，請重新核對。'});
+    if(rev!==leavePortalRevision){stop();return;}
+    leavePortalStop=stop;
+  }catch{if(rev===leavePortalRevision)box.textContent='員工請假服務尚未啟用，或無法連線。原本的請假登記仍可使用。';}
+}
+async function leavePortalApply(req,requestId){
+  const fail=error=>({ok:false,error});
+  if(!sec.key||sec.locked||sec.locking||!localDB.ready||persistence.external||persistence.loadBlocked||persistence.freezeCount||cloud.conflict||cloud.uncertain)return fail('薪資尚未解鎖，或有同步衝突。');
+  if(!req||req.status!=='approved'||!/^[A-Za-z0-9]{20}$/.test(requestId)||!LEAVE_ST.includes(req.type))return fail('查不到可帶入的已核准假單。');
+  if(typeof req.date!=='string'||leaveDeskDayKey(req.date)!==req.date)return fail('請假日期無效。');
+  if(req.date.slice(0,7)!==curYM())return fail('請先切換上方計薪月份到 '+req.date.slice(0,7)+'，再重試。');
+  const e=emp(req.employeeId);
+  if(!e)return fail('員工帳號尚未對應到既有薪資員工，請核對設定。');
+  const r=leaveDeskRaw(e.id,curYM());
+  const receipt=r?.leavePortalReceipts?.[requestId];
+  if(receipt){
+    return receipt.date===req.date&&receipt.type===req.type&&r.days.some(d=>d.leavePortalId===requestId&&d.date===req.date&&d.status===req.type)
+      ?{ok:true,already:true}:fail('曾帶入的考勤已更正或移除，請人工核對，不會重複登記。');
+  }
+  if(req.minutes!==0||req.start!==''||req.end!==''||isHourly(e))return fail('兼職或部分時段請假須先比對逐日原班表與實際打卡，再由主管在考勤處理。');
+  const check=leaveDeskInspect(e.id,req.date);
+  if(check.error)return fail(check.error);
+  const result=await leaveDeskRegister({id:e.id,date:req.date,type:req.type,full:true,portalId:requestId},check.token);
+  if(result.ok)renderActive();
+  return result;
+}
 async function leaveDeskRegister(form,expectedToken){
-  const {id,date,type,full,hours}=form;
+  const {id,date,type,full,hours,portalId}=form;
   if(!LEAVE_ST.includes(type)||typeof full!=='boolean')return {ok:false,error:'請選擇有效的假別和時數方式。'};
   try{
     return await dataOp(async epoch=>{
+      if(portalId&&(!sec.key||sec.locked||sec.locking||cloud.conflict||cloud.uncertain||typeof portalId!=='string'||!/^[A-Za-z0-9]{20}$/.test(portalId)))throw Error('尚未安全解鎖，請先核對同步狀態。');
       const check=leaveDeskInspect(id,date);
       if(check.error)throw Error(check.error);
       if(!expectedToken||check.token!==expectedToken)throw Error('月份、班表或明細已變更，請重新核對。');
@@ -2861,6 +2915,11 @@ async function leaveDeskRegister(form,expectedToken){
       month[id]=r;
       const index=r.days.findIndex(d=>d.date===date);
       const row={date,wk:wkOf(date),kind:'work',status:type,hours:minutes/60,in:'',out:'',wh:0,punches:0,leaveDesk:true,leaveDeskHadPending:index>=0};
+      if(portalId){
+        if(r.leavePortalReceipts?.[portalId])throw Error('此假單曾帶入，請重新核對。');
+        row.leavePortalId=portalId;
+        (r.leavePortalReceipts??={})[portalId]={date,type};
+      }
       if(index<0)r.days.push(row);else r.days[index]=row;
       r.days.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
       next.log=[...(next.log||[]),{t:new Date().toISOString(),action:'請假登記',detail:date+' '+DST[type]+' '+minutes+' 分鐘',ym,emp:e.name||id}].slice(-3000);
@@ -3180,7 +3239,7 @@ function save(){if(!localDB.ready||sec.locked||persistence.loadBlocked)return Pr
 function secReady(){return !!(window.crypto&&crypto.subtle);}
 
 function maskData(on){document.body.classList.toggle('data-locked',on);document.querySelectorAll('header,nav,main,.overlay').forEach(el=>{el.inert=on;});}
-function showLock(message=''){sec.locked=true;$('memoryRescue').style.display='none';maskData(true);$('lockOverlay').classList.add('on');$('lockPass').value='';$('lockMsg').textContent=message;
+function showLock(message=''){closeLeavePortal();sec.locked=true;$('memoryRescue').style.display='none';maskData(true);$('lockOverlay').classList.add('on');$('lockPass').value='';$('lockMsg').textContent=message;
   $('lockIntro').textContent=persistence.loadBlocked?'本機資料損壞，已停止讀取與寫入；請先匯出原始檔供復原。':'資料已遮蔽，請輸入密碼解鎖';
   $('lockRawExport').style.display=persistence.loadBlocked?'':'none';$('lockUnlock').disabled=!!persistence.loadBlocked;setTimeout(()=>$('lockPass').focus(),50);}
 function hideLock(){sec.locked=false;maskData(false);$('lockOverlay').classList.remove('on');$('lockPass').value='';}
@@ -3379,7 +3438,7 @@ function validateState(s){if(!isRecord(s)||s.version!==3||!isRecord(s.settings)|
   for(const e of s.employees){if(e.calendarPlans!=null&&(!isRecord(e.calendarPlans)||Object.values(e.calendarPlans).some(p=>!isRecord(p)||!Array.isArray(p.rows)||p.rows.some(x=>!isRecord(x)))))throw new Error('年度假日映射格式錯誤');if(e.leaveWageBases!=null&&(!isRecord(e.leaveWageBases)||Object.values(e.leaveWageBases).some(b=>!isRecord(b)||!Array.isArray(b.history))))throw new Error('遞延工資基準資料格式錯誤');if(e.sched!=null&&!isRecord(e.sched))throw new Error('排班資料格式錯誤');if(e.fixedItems!=null&&(!Array.isArray(e.fixedItems)||e.fixedItems.some(x=>!isRecord(x))))throw new Error('固定薪資項目格式錯誤');}
   for(const [ym,M]of Object.entries(s.months)){if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)||!isRecord(M)||Object.values(M).some(r=>!isRecord(r)))throw new Error('月份資料格式錯誤');
     for(const r of Object.values(M)){for(const k of ['days','otEvents','annualEvents','lateEvents','items'])if(r[k]!=null&&(!Array.isArray(r[k])||r[k].some(x=>!isRecord(x))))throw new Error('月份明細格式錯誤');
-      for(const k of ['att','absChoice','overrides','reviews','snapshot','calendarReview'])if(r[k]!=null&&!isRecord(r[k]))throw new Error('月份設定格式錯誤');
+      for(const k of ['att','absChoice','overrides','reviews','snapshot','calendarReview','leavePortalReceipts'])if(r[k]!=null&&!isRecord(r[k]))throw new Error('月份設定格式錯誤');
       if(r.schoolPay!=null&&(!isRecord(r.schoolPay)||!validSchoolMode(r.schoolPay,ym)||!Array.isArray(r.schoolPay.fridays)||r.schoolPay.fridays.some(d=>typeof d!=='string')))throw new Error('百宏月度薪資設定格式錯誤，未匯入');}}
 }
 
