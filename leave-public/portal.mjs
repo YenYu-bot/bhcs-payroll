@@ -39,13 +39,24 @@ async function jpeg(file){
 export async function mountLeave(root,mode,integrate){
   const cfg=await import('./config.mjs');
   const { staffOrigin, managerOrigin, config }=cfg;
-  if(!config?.apiKey||config.projectId==='bhcs-payroll'||!/^https:\/\//.test(staffOrigin)||!/^https:\/\//.test(managerOrigin)||staffOrigin===managerOrigin||
+  if(!config?.apiKey||config.projectId!=='bhcs-leave'||!/^https:\/\//.test(staffOrigin)||!/^https:\/\//.test(managerOrigin)||staffOrigin===managerOrigin||
       location.origin!==(mode==='staff'?staffOrigin:managerOrigin))throw Error('入口或專案設定不正確。');
   const [fa,au,fs]=await Promise.all(['app','auth','firestore'].map(n=>import(sdk+'firebase-'+n+'.js')));
   const name='bhcs-leave-'+mode;
   const app=fa.getApps().find(x=>x.name===name)||fa.initializeApp(config,name);
   const auth=au.getAuth(app),db=fs.getFirestore(app);
   await au.setPersistence(auth,au.inMemoryPersistence);
+  let journalAuth=null,journalDb=null,leaseTimer=null,renewing=false,loginRev=0;
+  if(mode==='staff'){
+    if(cfg.journalConfig?.projectId!=='bhcs-system'||!/^https:\/\/asia-east1-bhcs-leave\.cloudfunctions\.net\/exchangeJournalLogin$/.test(cfg.journalExchangeUrl??''))throw Error('教室日誌登入尚未開通。');
+    const j=fa.getApps().find(x=>x.name==='bhcs-journal-signin-for-leave')||fa.initializeApp(cfg.journalConfig,'bhcs-journal-signin-for-leave');
+    journalAuth=au.getAuth(j);journalDb=fs.getFirestore(j);
+    await au.setPersistence(journalAuth,au.inMemoryPersistence);
+  }
+  async function signOutAll(){
+    loginRev++;clearTimeout(leaseTimer);leaseTimer=null;
+    await Promise.all([au.signOut(auth),journalAuth?au.signOut(journalAuth):Promise.resolve()]);
+  }
   let closed=false,epoch=0,rev=0,member=null,urls=new Set(),busy=false;
   const objectsClear=()=>{for(const url of urls)URL.revokeObjectURL(url);urls.clear();};
   const alive=(token)=>!closed&&root.isConnected&&token===epoch;
@@ -71,9 +82,55 @@ export async function mountLeave(root,mode,integrate){
     note=make('p');note.setAttribute('role','status');root.append(note);
   }
   function list(head,container){root.append(make('h3',head),container);}
+  function scheduleRefresh(until){
+    clearTimeout(leaseTimer);
+    leaseTimer=setTimeout(async()=>{
+      if(closed||renewing||!auth.currentUser||!journalAuth?.currentUser)return;
+      renewing=true;
+      try{await exchange();}catch{if(!closed){await signOutAll();showLogin('登入已逾時或帳號已停用，請重新登入。');}}
+      finally{renewing=false;}
+    },Math.max(500,until-Date.now()-90_000));
+  }
+  async function exchange(){
+    if(closed||!journalAuth?.currentUser)throw Error('請重新登入教室日誌帳號。');
+    const current=journalAuth.currentUser,started=loginRev;
+    const idToken=await current.getIdToken(true);
+    const response=await fetch(cfg.journalExchangeUrl,{method:'POST',headers:{Authorization:'Bearer '+idToken},
+      credentials:'omit',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(12000)});
+    if(!response.ok)throw Error(response.status===401?'帳號未開通請假或需要更新教室日誌密碼，請洽主管。':'驗證服務暫時無法連線，請稍後再試。');
+    const data=await response.json();
+    if(closed||started!==loginRev||journalAuth.currentUser!==current||!Number.isSafeInteger(data.until)||data.until<=Date.now()||data.until>Date.now()+660_000||typeof data.token!=='string')throw Error('請重新登入。');
+    await au.signInWithCustomToken(auth,data.token);
+    if(closed||started!==loginRev){await signOutAll();return;}
+    scheduleRefresh(data.until);
+  }
   function showLogin(message=''){
     base();say(message);
-    root.append(button('使用 Google 帳號登入',()=>action(()=>au.signInWithPopup(auth,new au.GoogleAuthProvider()).then(()=>''))));
+    if(mode==='manager'){
+      root.append(button('使用主管 Google 帳號登入',()=>action(()=>au.signInWithPopup(auth,new au.GoogleAuthProvider()).then(()=>''))));
+      return;
+    }
+    const f=make('form'),id=field(f,'教室日誌帳號',make('input')),password=field(f,'教室日誌密碼',make('input'));
+    id.autocomplete='username';id.required=true;id.maxLength=64;
+    password.type='password';password.autocomplete='current-password';password.required=true;
+    const submit=make('button','使用教室日誌帳號登入');submit.type='submit';f.append(submit);
+    f.addEventListener('submit',e=>{e.preventDefault();action(async()=>{
+      const userId=id.value.trim().toLowerCase(),pw=password.value;
+      password.value='';
+      if(!/^[a-z0-9_-]{3,64}$/.test(userId)||!pw)throw Error('請輸入有效的教室日誌帳號和密碼。');
+      try{
+        const login=await get(fs.doc(journalDb,'logins',userId)),email=login.data()?.authEmail;
+        if(typeof email!=='string'||!email.endsWith('@bhcs.local')||email==='admin@bhcs.local')throw Error('帳號或密碼不正確。');
+        await au.signInWithEmailAndPassword(journalAuth,email,pw);
+        await exchange();
+      }catch(err){
+        await signOutAll();
+        if(err?.code?.startsWith('auth/'))throw Error('帳號或密碼不正確，或登入暫時受限。');
+        throw err;
+      }
+      return '';
+    });});
+    root.append(f);
   }
   async function showProof(id,box,token){
     const d=await get(proof(id));if(!alive(token)||!box.isConnected)return;
@@ -180,7 +237,7 @@ export async function mountLeave(root,mode,integrate){
       member=p.data();
       if(!p.exists()||member.active!==true||member.role!==mode||mode==='staff'&&(!member.employeeId||!member.label)){
         base();say('這個帳號沒有此入口的權限。');
-        root.append(button('登出並切換帳號',()=>au.signOut(auth)));return;
+        root.append(button('登出並切換帳號',()=>signOutAll()));return;
       }
       const controls=make('div');controls.className='lv-actions';root.append(controls);
       const results=make('div');
@@ -204,11 +261,11 @@ export async function mountLeave(root,mode,integrate){
         if(response.size===50){const moreBtn=button('顯示更多',()=>action(t=>refreshList(t,true)),true);moreBtn.classList.add('lv-more');results.append(moreBtn);}
       };
       if(month)month.onchange=()=>action(t=>refreshList(t));
-      controls.append(button('重新整理假單',()=>action(async t=>{await refreshList(t);return '已重新整理。';}),true),button('登出',()=>au.signOut(auth),true));
+      controls.append(button('重新整理假單',()=>action(async t=>{await refreshList(t);return '已重新整理。';}),true),button('登出',()=>signOutAll(),true));
       if(mode==='staff')submitForm(user);
       list(mode==='staff'?'我的假單':'員工假單',results);
       await refreshList(token);if(alive(token))say('');
-    }catch(e){if(alive(token)){base();say(uiError(e));root.append(button('登出',()=>au.signOut(auth),true));}}
+    }catch(e){if(alive(token)){base();say(uiError(e));root.append(button('登出',()=>signOutAll(),true));}}
   });
-  return ()=>{closed=true;epoch++;unsubscribe();objectsClear();root.replaceChildren();au.signOut(auth).catch(()=>{});};
+  return ()=>{closed=true;epoch++;unsubscribe();objectsClear();root.replaceChildren();signOutAll().catch(()=>{});};
 }

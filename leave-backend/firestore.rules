@@ -9,7 +9,14 @@ service cloud.firestore {
     function member() {
       return get(/databases/$(database)/documents/leaveMembers/$(request.auth.uid)).data;
     }
-    function staff() { return enabled() && member().role == 'staff'; }
+    function staff() {
+      return enabled() && member().role == 'staff'
+        && request.auth.token.firebase.sign_in_provider == 'custom'
+        && request.auth.token.journalBinding is int
+        && request.auth.token.journalBinding == member().journalBindingVersion
+        && request.auth.token.journalUntil is int
+        && request.auth.token.journalUntil > request.time.toMillis();
+    }
     function manager() { return enabled() && member().role == 'manager'; }
     function canRead(owner) { return manager() || (staff() && owner == request.auth.uid); }
     function req(id) { return get(/databases/$(database)/documents/leaveRequests/$(id)).data; }
