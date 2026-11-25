@@ -418,7 +418,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
       本系統依《勞動基準法》常見標準與主管機關公告之級距計算，實際仍請以貴機構內規與最新公告為準；本工具僅供試算，非法律或會計意見。
       <ul>
         <li><b>勞健保級距</b>：內建 <b>2026 年（民國115年）</b>官方級距與自付金額。勞保表含就業保險、勞工負擔 20%（資料源：勞保局）；健保費率 5.17%、勞工負擔 30%、眷屬最多計 3 人（資料源：健保署）。</li>
-        <li><b>計時人員</b>：工時工資 ＝ 計薪工時 × 時薪（每日 8 小時內）；超過 8 小時、休息日、國定假日出勤依 §24、§39 以時薪計加班費。公司給假、婚喪公假、特休照給工資；國定假日依「計時人員國定假日不排班」設定（預設已約定不排班、不給薪，出勤仍加倍）；病假、生理假半薪。特休日數與有薪病假上限依「部分工時比例」計給（僱用部分時間工作勞工應行注意事項）。時薪不得低於 196 元。</li>
+        <li><b>計時人員</b>：工時工資 ＝ 計薪工時 × 時薪（每日 8 小時內）；超過 8 小時、休息日、國定假日出勤依 §24、§39 以時薪計加班費。公司給假、婚喪公假、特休照給工資；國定假日原無出勤義務且無出勤者不另計薪；原約定工作日或有效補假依法照給，實際出勤依法加給。2026 排班制以逐日核對為準，不用每週樣板推算；病假、生理假半薪。特休日數與有薪病假上限依「部分工時比例」計給（僱用部分時間工作勞工應行注意事項）。時薪不得低於 196 元。</li>
         <li><b>應出勤日</b>：打卡機匯出檔每位員工列出的日期即排班日。未打卡日：國定假日自動標「國定假日」，其餘標「待確認」；漏打卡（只有一次打卡）不計遲到早退，請補登工時。<b>缺勤時數</b> ＝ 待確認 ＋ 曠職 ＋ 遲到早退。曠職扣當日工資並取消全勤。</li>
         <li><b>定額加班費</b>：每月發給約定金額；依法計算（§24）較高時自動補足差額。休息日工作時數計入每月 46 小時延長工時上限（§36），超過會提示。</li>
         <li><b>工資基礎</b> ＝ 底薪 ＋ 勾選「計入工資」的固定項目（預設全勤獎金、暑期津貼）。<b>時薪</b> ＝ 工資基礎 ÷ 240；<b>日薪</b> ＝ 工資基礎 ÷ 30。加班費、請假扣薪、特休未休工資皆以此計算。</li>
@@ -472,7 +472,7 @@ details.rules code{background:var(--wash);padding:1px 6px;border-radius:4px;font
     <summary>國定假日清單（判定國定假日出勤、未打卡日自動標為假日）</summary>
     <div class="rc">每行一天，格式 <code>YYYY-MM-DD 名稱</code>。預設為人事總處 2026 年行事曆（含補假日）。<br>
       <b>休息日調移</b>：名稱寫「休息日調移」（例：<code>2026-10-09 休息日調移</code>），該日對所有員工改為休息日（出勤依 §24 計休息日加班費），<b>同一週原本的休息日改為工作日</b>；若原休息日剛好是國定假日，即於當天放假、工資照給，不再另行補假。調移須事先與員工約定（勞動契約或書面同意）。個別員工例外可於出勤日曆逐日調整。
-      <label class="chk" style="margin-top:8px"><input type="checkbox" id="hhOff"> 計時人員原無出勤義務的國定假日不給薪；原約定排班的國定假日仍照給（出勤依 §39 計）</label>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="hhOff"> 2026 計時排班制：國定假日依逐日核實的排班、補假及出勤計薪（不套用每週樣板）</label>
       <textarea id="holidayList" rows="10" style="width:100%;margin-top:8px;font-family:var(--mono);font-size:12.5px;padding:8px;border:1px solid var(--line-strong);border-radius:8px"></textarea></div>
   </details>
   <details class="rules" style="margin-top:12px">
@@ -1251,6 +1251,28 @@ function annualIsFull(e,date,hours){const h=annualShiftHours(e,date);return h!=n
 function netWorkMinutes(e,minutes){let m=Math.max(0,+minutes||0);if(+e.brkMin>0&&m>=(+e.brkAfter||0)*60)m=Math.max(0,m-(+e.brkMin));return m;}
 function scheduledPaidHours(e,wk,date){const s=schedSpan(e,wk,date);return s==null?null:netWorkMinutes(e,s*60)/60;}
 const BUILTIN_2026_HOLIDAYS=new Set(HOLIDAYS_2026.split('\n').map(x=>x.slice(0,10)));
+const ROTATING_HOLIDAY_26_DATES=new Set(HOLIDAYS_2026.split('\n').filter(x=>!SWAP_RE.test(x)).map(x=>x.slice(0,10)));
+// 2026 計時排班制：全域假日只是核對候選，不能當個別員工的給薪依據。
+function rotatingHoliday26(e,date){return isHourly(e)&&String(date||'').startsWith('2026-')&&state.settings.hourlyHolidayOff!==false;}
+function rotatingHolidayRow(e,d,hol){
+ return (rotatingHoliday26(e,d?.date)||(isHourly(e)&&String(d?.date||'').startsWith('2026-')&&!!d.hourlyHolidayReview))&&(hol.has(d.date)||ROTATING_HOLIDAY_26_DATES.has(d.date)||(d.status||'work')==='holiday'||d.kind==='holidayWork'||!!d.hourlyHolidayReview);
+}
+function rotatingHolidayActual(e,d){
+ if(d.hours!=null&&d.hours!=='')return +d.hours;
+ return +d.punches>=2?netWorkMinutes(e,d.wh)/60:0;
+}
+function rotatingHolidayReviewSig(e,d){
+ return JSON.stringify([d.date,d.status,d.kind,d.hours,d.punches,d.in,d.out,d.wh,e.brkMin,e.brkAfter]);
+}
+function rotatingHolidayDecision(e,d){
+ const x=d.hourlyHolidayReview,st=d.status||'work',actual=['work','missing'].includes(st)||+d.punches>0||+d.wh>0||!!d.in||!!d.out;
+ if(!x||x.sig!==rotatingHolidayReviewSig(e,d)||!String(x.basis||'').trim())return null;
+ if(x.mode==='none')return !actual&&st==='notScheduled'&&!Number(d.hours)?x:null;
+ if(x.mode==='paid')return !actual&&st==='holiday'&&+d.hours>0&&+d.hours<=8?x:null;
+ if(x.mode==='work')return st==='work'&&d.kind==='holidayWork'&&rotatingHolidayActual(e,d)>0&&rotatingHolidayActual(e,d)<=24&&Number.isFinite(x.agreed)&&x.agreed>=0&&x.agreed<=8?x:null;
+ if(x.mode==='ordinary')return !['holiday','missing','notScheduled'].includes(st)&&d.kind!=='holidayWork'?x:null;
+ return null;
+}
 function scheduledHourlyStatHoliday(e,d,hol){
  if(!isHourly(e)||d.status!=='holiday'||!hol.has(d.date))return false;
  if(calDate(d.date))return calType(e,d.date)==='work';
@@ -1282,7 +1304,26 @@ function dayAgg(e,r){
   const sd=new Set(),wd=new Set();
   const hhOff=hrly&&state.settings.hourlyHolidayOff!==false;
   let mappedHolidaySet;
-  days.forEach(d=>{const st=d.status||'work';if(st==='notScheduled')return;
+  const rotationHol=hrly&&days.some(d=>rotatingHoliday26(e,d.date)||String(d.date||'').startsWith('2026-')&&d.hourlyHolidayReview)?employeeHolidaySet(e):null;
+  const dateCounts=new Map();
+  if(rotationHol)for(const d of days)dateCounts.set(d.date,(dateCounts.get(d.date)||0)+1);
+  const flag=d=>(A.hourlyHolidayReviewIssues??=[]).push(d);
+  days.forEach(d=>{const st=d.status||'work';
+    if(rotationHol&&rotatingHolidayRow(e,d,rotationHol)&&(!r.confirmed||d.hourlyHolidayReview)){
+      const x=rotatingHolidayDecision(e,d);
+      if(x?.mode!=='ordinary')(A.rotatingHolidayNonOrdinary??=[]).push(d.date);
+      if(!x||dateCounts.get(d.date)>1||!calEmployed(e,d.date)){flag(d.date);return;}
+      if(x.mode==='none')return;
+      if(x.mode==='paid'||x.mode==='work'){
+        const h=x.mode==='work'?rotatingHolidayActual(e,d):0;
+        const extra=x.mode==='paid'?+d.hours:Math.max(0,x.agreed-Math.min(h,8));
+        if(extra>0){A.holidayH+=extra;A.hourlyStatHolidayH=(A.hourlyStatHolidayH||0)+extra;(A.mappedHolidayHours??={})[d.date]=extra;(A.rotatingPaidDates??=[]).push([d.date,extra]);}
+        if(x.mode==='work'){sd.add(d.date);wd.add(d.date);A.workH+=h;A.regH+=Math.min(h,8);A.holidayWork++;
+          const ev={type:'holiday',hours:h,date:d.date};A.ot.push(ev);(A.rotatingHolidayWork??=[]).push(ev);}
+        return;
+      }
+    }
+    if(st==='notScheduled')return;
     const holidaySet=st==='holiday'&&(calDate(d.date)||hrly&&BUILTIN_2026_HOLIDAYS.has(d.date))&&!r.confirmed?(mappedHolidaySet??=employeeHolidaySet(e)):null;
     const mapped=st==='holiday'&&(holidaySet||r.confirmed)?mappedHolidayHours(e,d,holidaySet,r):undefined;
     const statutoryHourly=hrly&&st==='holiday'&&(r.confirmed?mapped!==undefined:holidaySet&&scheduledHourlyStatHoliday(e,d,holidaySet));
@@ -1914,8 +1955,9 @@ function computeLive(e,ym,r){
   // 打卡先產生差額；未核明是不是個人無薪缺勤前，不扣任何金額。
   const {found:restShort,dates:restDates}=schoolRestAttendance(e,ym,r,school,pr);
   for(const date of restLeaveDates)restDates.add(date);
-  const lateRec=restDates.size?{...r,lateEvents:r.lateEvents.filter(x=>!restDates.has(normDate(x.date)))}:r;
-  if(lateRec!==r&&lateRec.lateEvents.length!==r.lateEvents.length)warns.push('同日休息日加班不再套用手動登錄的平日遲到早退；原明細保留，請以休息日核對判斷。');
+  const holidayNonOrdinary=new Set(A.rotatingHolidayNonOrdinary||[]);
+  const lateRec=restDates.size||holidayNonOrdinary.size?{...r,lateEvents:r.lateEvents.filter(x=>!restDates.has(normDate(x.date))&&!holidayNonOrdinary.has(normDate(x.date)))}:r;
+  if(lateRec!==r&&lateRec.lateEvents.length!==r.lateEvents.length)warns.push('休息日加班或待核對／確認的國定假日不套用平日遲到早退；原明細保留。');
   let restPersonal=0;
   for(const q of restShort){
     const key='restShort:'+q.date;
@@ -1970,9 +2012,9 @@ function computeLive(e,ym,r){
   // 加班費（自動計算、定額補足）
   const T={rest:0,holiday:0,offday:0,weekday:0};A.ot.forEach(x=>{T[x.type]+=x.hours;});
   const manualOT=otSummary(payEmployee,r,{ot:[]}),otDays=ot.pay-manualOT.pay;
-  const otSig=JSON.stringify({v:2,hr,hm:hrly,manual:r.otEvents,auto:A.ot});
+  const otSig=JSON.stringify({v:A.rotatingHolidayWork?.length?3:2,hr,hm:hrly,manual:r.otEvents,auto:A.ot});
   let legal=ot.pay;
-  if(!school?.special&&otDays&&decide('ot','依打卡自動計算加班費',[T.rest&&'休息日 '+D2(T.rest)+'h',T.holiday&&'國定假日出勤 '+D2(T.holiday)+'h',T.offday&&'例假日出勤 '+D2(T.offday)+'h',T.weekday&&'單日逾 8 小時 '+D2(T.weekday)+'h'].filter(Boolean).join('、')+`（時薪 ${N(hr)}；同日合計套級距）`,otDays,otSig)==='no')legal=manualOT.pay;
+  if(!school?.special&&otDays&&decide('ot','依打卡自動計算加班費',[T.rest&&'休息日 '+D2(T.rest)+'h',T.holiday&&'國定假日出勤 '+D2(T.holiday)+'h',T.offday&&'例假日出勤 '+D2(T.offday)+'h',T.weekday&&'單日逾 8 小時 '+D2(T.weekday)+'h'].filter(Boolean).join('、')+`（時薪 ${N(hr)}；同日合計套級距）`,otDays,otSig,!!A.rotatingHolidayWork?.length)==='no')legal=manualOT.pay;
   // 手動加班為額外紀錄；同日同類同時有打卡來源時，必須先確認沒有重複填入。
   const overlap=(r.otEvents||[]).filter(x=>+x.hours>0&&otDateKey(x.date)!=null&&A.ot.some(a=>otDateKey(a.date)===otDateKey(x.date)&&a.type===x.type));
   if(overlap.length){warns.push('同日加班同時有手動與打卡來源，請核對是否重複；目前以合計時數試算');
@@ -2135,6 +2177,15 @@ function computeLive(e,ym,r){
     const missingHours=(r.days||[]).filter(d=>d&&unresolvedHourlyWorkedHours(e,d)).map(d=>d.date);
     if(missingHours.length)floorBlock('計時出勤未填有效計入時數（'+missingHours.join('、')+'），請核對應出勤明細，有實際工作時數再確認。');
   }
+  if((r.days||[]).some(d=>rotatingHoliday26(e,d.date)&&d.hourlyHolidayReview&&d.date.slice(0,7)!==ym))floorBlock('計時國定假日核對日期不在本月，請先更正。');
+  if(A.hourlyHolidayReviewIssues?.length)floorBlock('計時排班制的國定假日待核對（'+[...new Set(A.hourlyHolidayReviewIssues)].join('、')+'）。請到應出勤日曆逐日確認，不可直接結算。');
+  const standaloneHoliday=(r.otEvents||[]).filter(x=>x.type==='holiday'&&+x.hours>0&&(/^2026-/.test(ym)&&rotatingHoliday26(e,x.date||ym+'-01')));
+  if(standaloneHoliday.length&&!A.rotatingHolidayWork?.length)floorBlock('計時國定假日須在出勤日曆核對實際出勤，不可只填手動加班，否則會漏計原工資。');
+  if(A.rotatingHolidayWork?.length){
+    const h=A.rotatingHolidayWork.reduce((n,x)=>n+Math.min(x.hours,8),0),due=otSummary(payEmployee,{otEvents:[]},{ot:A.rotatingHolidayWork}).pay;
+    if(standaloneHoliday.length||(r.otEvents||[]).some(x=>A.rotatingHolidayWork.some(d=>otDateKey(d.date)===otDateKey(x.date))&&+x.hours>0))floorBlock('計時國定假日同日已有出勤與手動加班，請移除重複明細後確認。');
+    if(legal<due||val(earnings,'加班費')<due||val(earnings,'工時工資')<Math.round(h*hr))floorBlock('計時國定假日出勤的工時工資或法定加給不足，不能以不採用或覆寫後確認。');
+  }
   if(A.hourlyStatHolidayIssues?.length)floorBlock('原約定排班的國定假日照給時數不足（'+A.hourlyStatHolidayIssues.join('、')+'），請核對並更正，不可確認。');
   const approvedAmount=label=>earnings.find(x=>x[0]===label)?.[1]??0;
   if(hrly&&A.hourlyStatHolidayH&&!(approvedAmount('假日/特休照給')>=Math.round(A.hourlyStatHolidayH*hr)))floorBlock('原約定排班的國定假日照給工資不足，不能以覆寫刪減後確認。');
@@ -2186,7 +2237,7 @@ function computeLive(e,ym,r){
   const absence={absentDays:A.absent,pendingDays:A.pending,offsetH:D2(L.offsetDays*HPD),pendingH:D2(A.pendingH),absentH:D2(A.absentH),lateMin:L.totalMin,missing:A.missing,total:D2(A.pendingH+A.absentH+L.totalMin/60)};
   const hoursInfo=hrly?{rate:hr,regH:D2(A.regH+(+r.att.extraHours||0)),extraH:D2(+r.att.extraHours||0),holidayH:D2(A.holidayH),offH:D2(A.offH),paidLeaveH:D2(ML.paidLeave),annualH:D2(annualH),
     halfH:D2((sickHalf+menOwn)*HPD),typhoonH:D2(typhoonPaid?A.typhoonH:0),typhoonWorkH:D2(A.typhoonWorkH)}:null;
-  return {...(A.mappedHolidayHours?{mappedHolidayHours:A.mappedHolidayHours}:{}),schoolSplitActive:!!schoolOT,restShort:restShort.map(({sig,...details})=>details),restReduction,pensionCanReview:pr.employed&&(pw>0||+e.pensionSelf>0||!!r.pensionBasis),pensionReviewNeeded,pensionBasis,leavePayrollBlocks,deferredNeeds,deferredDetails,settlementBlocked:deferredNeeds.length>0||leavePayrollBlocks.length>0,negNotes,hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
+  return {...(A.rotatingPaidDates?{rotatingPaidDates:A.rotatingPaidDates}:{}),...(A.mappedHolidayHours?{mappedHolidayHours:A.mappedHolidayHours}:{}),schoolSplitActive:!!schoolOT,restShort:restShort.map(({sig,...details})=>details),restReduction,pensionCanReview:pr.employed&&(pw>0||+e.pensionSelf>0||!!r.pensionBasis),pensionReviewNeeded,pensionBasis,leavePayrollBlocks,deferredNeeds,deferredDetails,settlementBlocked:deferredNeeds.length>0||leavePayrollBlocks.length>0,negNotes,hoursInfo,customE,customD,reviews,pendingReviews:reviews.filter(x=>x.st==='pending').length,payType:hrly?'hourly':'monthly',earnings,deducts,gross,totalDed,net:gross-totalDed,perfectStatus,perfectNote,annualLeft,annualPay,payDays:D2(payDays),payNotes,otNote,warns,
     hr,dw:annualDw,payDayWage:dw,wage:monthRegularWage,ot:{weekday:ot.weekday,rest:ot.rest,holiday:ot.holiday,offday:ot.offday,pay:ot.pay,count:ot.count,hours:ot.hours,ext:ot.ext},
     typhoon:{days:A.typhoon,h:D2(A.typhoonH),workH:D2(A.typhoonWorkH)},attend:{sched:A.sched,worked:A.worked,workH:D2(A.workH),regH:D2(A.regH+(+r.att.extraHours||0)),holidayWork:A.holidayWork,hasDays:(r.days||[]).length>0},absence,
     leave:{sick:D2(sickD),men:D2(menD),sickCap:D2(sickCap),personal:D2(perD+carePersonalD),carePersonal:D2(carePersonalD),protectedSick:D2(H(ML.protectedSick)),family:D2(famD),paid:D2(paidD),annualH:D2(annualH),sickYear:D2(sickPrior+sickAll),sickFullDays:D2(sickFull)},
@@ -2448,7 +2499,7 @@ function derivePunch(days,e){const hol=employeeHolidaySet(e),ty=typhoonSet(),out
     const abnormal=d.abnormal||n===1,isHol=hol.has(dt);
     const isTy=ty.has(dt);
     const kind=n===0?'work':(isHol?'holidayWork':g.type==='off'?'offWork':g.type==='rest'?'rest':isTy?'typhoonWork':'work');
-    const status=n===0?(g.type!=='work'?'notScheduled':isHol?'holiday':isTy?'typhoon':'pending'):(abnormal?'missing':'work');
+    const status=n===0?(rotatingHoliday26(e,dt)&&isHol?'holiday':g.type!=='work'?'notScheduled':isHol?'holiday':isTy?'typhoon':'pending'):(abnormal?'missing':'work');
     out.push({date:dt,wk,in:n?fmtMin(inn):'',out:n>1?fmtMin(outT):'',wh:d.whMin,punches:n,abnormal,kind,status,hours:null});
     if(status==='work'&&kind==='work'&&!isTy&&g.start){const late=Math.max(0,inn-timeToMin(g.start)),early=g.end?Math.max(0,timeToMin(g.end)-outT):0;if(late>0||early>0)lateEvents.push({date:dt,late,early});}});
   return {days:out,lateEvents,workHours:+(workMin/60).toFixed(2)};}
@@ -2517,7 +2568,7 @@ function ingestRows(rows,fname){
      const e=g.e,old=state.months[ym]?.[e.id]||null;
      const priorDays=old?.days?.length||0;
      const priorInputs=!!(priorDays||old?.otEvents?.length||old?.annualEvents?.length||old?.lateEvents?.length||Object.keys(old?.absChoice||{}).length||Object.values(old?.att||{}).some(v=>+v!==0));
-     const status=old?.confirmed?'locked':old&&leaveDeskHasRegistration({...old,days:old.days||[]})?'protected':priorInputs?'overwrite':'add';
+     const status=old?.confirmed?'locked':old&&(leaveDeskHasRegistration({...old,days:old.days||[]})||(old.days||[]).some(x=>x.hourlyHolidayReview))?'protected':priorInputs?'overwrite':'add';
      const derived=isPunch?derivePunch(g.days,e):g;
      if(isPunch&&isHourly(e)&&!['locked','protected'].includes(status)){
        const missing=derived.days.filter(d=>unresolvedHourlyWorkedHours(e,d)).map(d=>d.date);
@@ -2530,10 +2581,10 @@ function ingestRows(rows,fname){
      entries.push({eid:e.id,name:e.name,no:attText(e.empNo),status,dates,priorDays,delta});
    }
    attendancePreview={ym,fname,isPunch,entries,stamp:attendanceImportStamp(ym)};
-   const statusLabels={add:'新增',overwrite:'覆蓋',locked:'已確認，略過',protected:'已有請假登記，略過'};
+   const statusLabels={add:'新增',overwrite:'覆蓋',locked:'已確認，略過',protected:'已有請假登記或計時假日核對，略過'};
    const count=k=>entries.filter(x=>x.status===k).length;
    const tr=entries.map(x=>'<tr><td>'+esc(x.name)+(x.no?'（'+esc(x.no)+'）':'')+'</td><td>'+statusLabels[x.status]+'</td><td>'+x.priorDays+' → '+(['locked','protected'].includes(x.status)?x.priorDays:x.delta.days.length)+'</td><td>'+esc(x.dates.join('、'))+'</td></tr>').join('');
-   $('parseMsg').innerHTML='<section aria-label="出勤匯入預覽"><p role="status"><b>尚未寫入｜'+esc(ym)+' 出勤匯入預覽</b>　'+esc(fname)+'</p><p>新增 '+count('add')+' 人、覆蓋 '+count('overwrite')+' 人、已確認略過 '+count('locked')+' 人、請假保護略過 '+count('protected')+' 人。'+(ym!==curYM()?'確認後將切換計薪月份。':'')+'</p><p>覆蓋會取代這些人的逐日出勤／遲到早退及原缺勤分類；'+(isPunch?'保留手動輸入的非休息日加班、總時數與特休明細。':'另取代加班資料，並清除原總時數及手動特休明細。')+'</p><div style="overflow:auto"><table><thead><tr><th scope="col">員工</th><th scope="col">影響</th><th scope="col">出勤列數（原 → 新）</th><th scope="col">檔案日期</th></tr></thead><tbody>'+tr+'</tbody></table></div><p>'+(count('add')+count('overwrite')?'<button class="btn primary" onclick="commitAttendanceImport()">確認寫入 '+esc(ym)+'</button> ':'')+'<button class="btn" onclick="cancelAttendanceImport()">取消，不變更</button></p></section>';
+   $('parseMsg').innerHTML='<section aria-label="出勤匯入預覽"><p role="status"><b>尚未寫入｜'+esc(ym)+' 出勤匯入預覽</b>　'+esc(fname)+'</p><p>新增 '+count('add')+' 人、覆蓋 '+count('overwrite')+' 人、已確認略過 '+count('locked')+' 人、既有核對／請假保護略過 '+count('protected')+' 人。'+(ym!==curYM()?'確認後將切換計薪月份。':'')+'</p><p>覆蓋會取代這些人的逐日出勤／遲到早退及原缺勤分類；'+(isPunch?'保留手動輸入的非休息日加班、總時數與特休明細。':'另取代加班資料，並清除原總時數及手動特休明細。')+'</p><div style="overflow:auto"><table><thead><tr><th scope="col">員工</th><th scope="col">影響</th><th scope="col">出勤列數（原 → 新）</th><th scope="col">檔案日期</th></tr></thead><tbody>'+tr+'</tbody></table></div><p>'+(count('add')+count('overwrite')?'<button class="btn primary" onclick="commitAttendanceImport()">確認寫入 '+esc(ym)+'</button> ':'')+'<button class="btn" onclick="cancelAttendanceImport()">取消，不變更</button></p></section>';
  }catch(err){attendancePreviewNotice('無法預覽：'+(err.message||String(err)));}
 }
 function commitAttendanceImport(){
@@ -2547,7 +2598,7 @@ function commitAttendanceImport(){
  state.months[p.ym]=next;
  if(p.ym!==curYM()){$('pYear').value=+p.ym.slice(0,4);$('pMonth').value=+p.ym.slice(5);setPayDateDefault();}
  addLog(p.isPunch?'匯入打卡檔':'匯入出勤表',p.fname+'：'+writes.length+' 人',p.ym);save();renderAtt();
- attendancePreviewNotice((p.isPunch?'打卡匯入成功':'出勤匯入成功')+'：'+p.ym+' 匹配 '+writes.length+' 人；已確認未覆蓋 '+p.entries.filter(x=>x.status==='locked').length+' 人；已有請假登記未覆蓋 '+p.entries.filter(x=>x.status==='protected').length+' 人。');
+ attendancePreviewNotice((p.isPunch?'打卡匯入成功':'出勤匯入成功')+'：'+p.ym+' 匹配 '+writes.length+' 人；已確認未覆蓋 '+p.entries.filter(x=>x.status==='locked').length+' 人；已有請假登記／計時假日核對未覆蓋 '+p.entries.filter(x=>x.status==='protected').length+' 人。');
  toast('出勤已核算');openAbs(true);return true;
 }
 
@@ -2617,16 +2668,57 @@ function renderDet(){if(det.kind==='day')return renderDay();if(det.kind==='items
     else s+='　→　未超過，不扣全勤、不扣薪';}
   if(lock)s+='<br><span class="pill ok">本月薪資單已確認，明細鎖定</span>';
   $('detSummary').innerHTML=s;}
+function rotatingHolidayRowLabel(e,d,i,lock){
+ const x=rotatingHolidayDecision(e,d);
+ const label=x?.mode==='none'?'未排班，不另計薪':x?.mode==='paid'?'照給 '+D2(+d.hours)+' 小時，無須出勤':x?.mode==='work'?'國定假日出勤 '+D2(rotatingHolidayActual(e,d))+' 小時':x?.mode==='ordinary'?'非該員工適用假日，按當日班別':'假日待核對（不套每週樣板）';
+ const status='<br><span style="font-size:11px;color:var(--accent)">'+esc(label)+'</span>';
+ if(lock||d.leaveDesk)return status;
+ const modes={none:'未排班且未出勤',paid:'原班／補假照給，未出勤',work:'實際國定假日出勤',ordinary:'不是本人適用的假日'};
+ const options=Object.entries(modes).map(([key,value])=>'<option value="'+key+'"'+(x?.mode===key?' selected':'')+'>'+value+'</option>').join('');
+ return status+'<details><summary>核對假日</summary><label>處理方式 <select id="rotMode'+i+'" onchange="rotatingHolidayHoursField('+i+')"><option value="">請選擇</option>'+options+'</select></label><br><label>核對依據 <input id="rotBasis'+i+'" maxlength="200" placeholder="如當月班表或個別補假紀錄" value="'+esc(x?.basis||'')+'"></label><br><label id="rotHoursRow'+i+'"'+(['paid','work'].includes(x?.mode)?'':' hidden')+'>原班應照給淨工時 <input id="rotHours'+i+'" type="number" min="0" max="8" step="any" value="'+esc(x?.mode==='work'?x.agreed:x?.mode==='paid'?d.hours:'')+'"> 小時（實際出勤且原無排班填 0）</label><br><button class="btn primary tiny" type="button" onclick="reviewRotatingHoliday('+i+')">儲存核對</button></details>';
+}
+function applyRotatingHolidayReview(e,d,mode,basis,input=null){
+ const note=String(basis||'').trim();
+ if(!note)throw Error('請填寫排班／出勤核對依據。');
+ if(otDateKey(d.date)==null||fd(otDateKey(d.date))!==d.date||!calEmployed(e,d.date))throw Error('日期無效或不在任職期間。');
+ const x={...d},hours=input==null||String(input).trim()===''?null:Number(input);
+ const actual=+x.punches>0||+x.wh>0||!!x.in||!!x.out;
+ if(mode==='none'||mode==='paid'){
+   if(actual)throw Error('已有出勤紀錄，不得標為未排班或未出勤照給。');
+   if(mode==='paid'&&!(hours>0&&hours<=8))throw Error('請輸入已核對的照給工時（大於 0、至多 8 小時）。');
+   Object.assign(x,{status:mode==='paid'?'holiday':'notScheduled',kind:'work',hours:mode==='paid'?hours:null});
+ }else if(mode==='work'){
+   if(!actual&&x.status!=='work')throw Error('沒有出勤證據，請先補登核實的實際出勤時數。');
+   if(x.status==='missing')throw Error('請先核對漏打卡，補登實際出勤後再核對。');
+   if(hours==null||!Number.isFinite(hours)||hours<0||hours>8)throw Error('請輸入原班應照給工時（0 至 8 小時）。');
+   Object.assign(x,{status:'work',kind:'holidayWork'});
+ }else if(mode==='ordinary'){
+   if(x.kind==='holidayWork'||x.status==='holiday'||x.status==='notScheduled')throw Error('請先選正確的狀態及班別（不是「國定假日出勤」）。');
+ }else throw Error('請選擇有效的核對結果。');
+ x.hourlyHolidayReview={mode,basis:note,agreed:mode==='work'?hours:null,sig:rotatingHolidayReviewSig(e,x)};
+ if(!rotatingHolidayDecision(e,x))throw Error('仍缺有效的出勤或照給時數。');
+ return x;
+}
+function rotatingHolidayHoursField(i){$('rotHoursRow'+i).hidden=!['paid','work'].includes($('rotMode'+i).value);}
+function reviewRotatingHoliday(i){
+ const e=emp(det.id),r=mrec(e.id),d=r.days[i];
+ if(r.confirmed||!d||d.leaveDesk||!rotatingHolidayRow(e,d,employeeHolidaySet(e)))return;
+ if(d.date.slice(0,7)!==curYM())return toast('只能核對本月日期。');
+ if(r.days.some((row,j)=>j!==i&&row.date===d.date))return toast('同日有多筆出勤列，請先核對並更正重複資料。');
+ const mode=$('rotMode'+i).value,basis=$('rotBasis'+i).value.trim(),h=$('rotHours'+i).value;
+ try{r.days[i]=applyRotatingHolidayReview(e,d,mode,basis,h);addLog('核對計時國定假日',d.date+' '+mode+' '+basis,curYM(),e.id);save();renderDet();}catch(err){toast(err.message);}
+}
 function renderDay(){
   const e=emp(det.id),m=mrec(e.id),arr=m.days,lock=m.confirmed,hrly=isHourly(e),hol=employeeHolidaySet(e);
   const opt=(map,v)=>Object.entries(map).map(([k,t])=>`<option value="${k}"${k===v?' selected':''}>${t}</option>`).join('');
   const A=dayAgg(e,m);
-  const autoH=d=>{const st=d.status||'work';if(st==='work'||st==='missing')return D2(workedH(e,Object.assign({},d,{hours:null})));if(st==='notScheduled')return '';const mapped=mappedHolidayHours(e,{...d,hours:null},hol,m);if(mapped!==undefined)return mapped==null?'待核對':D2(mapped);const s=schedSpan(e,d.wk,d.date);return hrly?(s!=null?D2(s):'均'):HPD;};
+  const autoH=d=>{const st=d.status||'work';
+    if(rotatingHolidayRow(e,d,hol)&&(!lock||d.hourlyHolidayReview)){const x=rotatingHolidayDecision(e,d);if(!x)return '待核對';if(x.mode==='none')return '';if(x.mode==='paid')return D2(+d.hours);if(x.mode==='work')return D2(rotatingHolidayActual(e,d));}if(st==='work'||st==='missing')return D2(workedH(e,Object.assign({},d,{hours:null})));if(st==='notScheduled')return '';const mapped=mappedHolidayHours(e,{...d,hours:null},hol,m);if(mapped!==undefined)return mapped==null?'待核對':D2(mapped);const s=schedSpan(e,d.wk,d.date);return hrly?(s!=null?D2(s):'均'):HPD;};
   const color={pending:'var(--neg)',missing:'var(--neg)',absent:'var(--neg)',holiday:'var(--gold)',off:'var(--gold)'};
   const rows=arr.map((d,i)=>{const dis=lock||d.leaveDesk===true?' disabled':'',st=d.status||'work',hn=hol.has(d.date)?employeeHolidayName(e,d.date):'';
-    return `<tr style="${st==='notScheduled'?'opacity:.5':''}"><td style="white-space:nowrap">${esc((d.date||'').slice(5))}（${esc(d.wk||wkOf(d.date))}）${hn?`<br><span style="font-size:11px;color:var(--gold)">${esc(hn)}</span>`:''}${st==='holiday'&&hrly&&state.settings.hourlyHolidayOff!==false&&mappedHolidayHours(e,{...d,hours:null},hol,m)===undefined?'<br><span style="font-size:11px;color:var(--muted)">依約定不排班、不計薪</span>':''}${(()=>{const sw=schedFor(e,d.wk||wkOf(d.date),d.date).swapped;return sw?`<br><span style="font-size:11px;color:var(--accent)">${sw==='toRest'?'休息日調移至本日':'原休息日改為工作日'}</span>`:'';})()}</td>
+    return `<tr style="${st==='notScheduled'?'opacity:.5':''}"><td style="white-space:nowrap">${esc((d.date||'').slice(5))}（${esc(d.wk||wkOf(d.date))}）${hn?`<br><span style="font-size:11px;color:var(--gold)">${esc(hn)}</span>`:''}${rotatingHolidayRow(e,d,hol)&&(!lock||d.hourlyHolidayReview)?rotatingHolidayRowLabel(e,d,i,lock):''}${!rotatingHoliday26(e,d.date)&&st==='holiday'&&hrly&&state.settings.hourlyHolidayOff!==false&&mappedHolidayHours(e,{...d,hours:null},hol,m)===undefined?'<br><span style="font-size:11px;color:var(--muted)">依約定不排班、不計薪</span>':''}${(()=>{const sw=schedFor(e,d.wk||wkOf(d.date),d.date).swapped;return sw?`<br><span style="font-size:11px;color:var(--accent)">${sw==='toRest'?'休息日調移至本日':'原休息日改為工作日'}</span>`:'';})()}</td>
       <td style="white-space:nowrap"><input type="time" class="tm" value="${esc(d.in||'')}"${dis} onchange="editDet(${i},'in',this.value)">–<input type="time" class="tm" value="${esc(d.out||'')}"${dis} onchange="editDet(${i},'out',this.value)">
-        ${dis?'':`<button class="btn ghost tiny" title="帶入排班時間" onclick="fillSched(${i})">⟲</button>`}<br><span style="font-size:11px;color:var(--muted)">${d.leaveDesk===true?'請假登記':d.punches?(d.manual?'手動 ':'打卡 ')+D2((+d.wh||0)/60)+'h':'無打卡'}</span></td>
+        ${dis||rotatingHolidayRow(e,d,hol)?'':`<button class="btn ghost tiny" title="帶入排班時間" onclick="fillSched(${i})">⟲</button>`}<br><span style="font-size:11px;color:var(--muted)">${d.leaveDesk===true?'請假登記':d.punches?(d.manual?'手動 ':'打卡 ')+D2((+d.wh||0)/60)+'h':'無打卡'}</span></td>
       <td><select${dis} onchange="editDet(${i},'kind',this.value)">${opt(DKIND,d.kind||'work')}</select></td>
       <td><select${dis} style="color:${color[st]||'inherit'}" onchange="editDet(${i},'status',this.value)">${opt(DST,st)}</select></td>
       <td><input class="num" type="number" step="0.25" min="0" value="${d.hours!=null&&d.hours!==''?d.hours:''}" placeholder="${autoH(d)}"${dis} onchange="editDet(${i},'hours',this.value)"></td>
@@ -2634,6 +2726,7 @@ function renderDay(){
   $('detWrap').innerHTML=(arr.length?`<div style="max-height:52vh;overflow:auto"><table class="late-tbl"><thead><tr><th>日期</th><th>上班–下班</th><th>類型</th><th>狀態</th><th>計入時數</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     :'<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">本月尚無應出勤日。匯入打卡 .xlsx 會自動建立，也可在下方逐日新增。</p>')
     +(lock?'':`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn ghost sm" onclick="genDays()">依排班產生本月應出勤日</button><button class="btn ghost sm" onclick="fillAllPending()">待確認日以排班時間登錄出勤</button></div>`)
+    +(!lock&&rotatingHoliday26(e,curYM()+'-01')?'<p class="note">計時排班制：國定假日不套每週樣板。舊出勤列請點「核對假日」，以當月原班表、個別補假或實際出勤紀錄為準。有給薪例外但列表沒有日期，可在下方新增該日再核對。</p>':'')
     +`<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">可直接輸入上下班時間計算工時（⟲ 帶入排班時間）。${+e.brkMin?'工時滿 '+(+e.brkAfter||0)+' 小時扣休息 '+e.brkMin+' 分。':''}「計入時數」留空＝自動（淡字）：出勤日依${e.hourBasis==='sched'?'排班時數':'打卡工時'}（按分鐘，不捨去）；請假等非出勤日${hrly?'依排班時數，未設定則取同類日平均':'每日 8 小時'}。${!lock&&curYM().startsWith('2027-')?'已設定的國定假日（照給）留空時，依當日排班扣掉休息後的時數。':''}</p>`;
   const R=ymRange(curYM());
   $('detAdd').innerHTML=lock?'':`<div class="f" style="min-width:140px"><label>日期</label><input id="d_date" type="date" min="${fd(R.start)}" max="${fd(R.end-DAY)}"></div>
@@ -2646,7 +2739,7 @@ function renderDay(){
   if(A.holidayH)sm+=`　國定假日 ${D2(A.holidayH)}h`;if(A.offH)sm+=`　公司休假 ${D2(A.offH)}h`;
   sm+=`<br>缺勤：待確認 <b style="color:${A.pending?'var(--neg)':'inherit'}">${A.pending} 天 ${D2(A.pendingH)}h</b>、曠職 <b>${A.absent} 天 ${D2(A.absentH)}h</b>、漏打卡未補 <b style="color:${A.missing?'var(--neg)':'inherit'}">${A.missing} 天</b>、遲到早退 ${c.late.totalMin} 分`;
   if(A.offWork)sm+=`<br><span style="color:var(--neg)">例假日出勤 ${A.offWork} 天：§40 僅限天災、事變或突發事件，工資加倍並須補假、報主管機關核備。若其實是休息日，請到排班設定調整。</span>`;
-  if(A.holidayWork)sm+=`<br><span style="color:var(--gold)">國定假日出勤 ${A.holidayWork} 天：依§39 加倍發給。若已與員工協商調移假日，請把類型改為「平日」。</span>`;
+  if(A.holidayWork)sm+=`<br><span style="color:var(--gold)">國定假日出勤 ${A.holidayWork} 天：依 §39 計薪；如個別假日已合法調移，依實際適用日認定。</span>`;
   if(hrly)sm+=`<br>計時工時 <b>${D2(A.regH)}</b> h　＋ 手動調整 <input class="num" type="number" step="0.25" style="width:80px;padding:4px 6px;border:1px solid var(--line-strong);border-radius:6px" value="${m.att.extraHours||''}"${lock?' disabled':''} onchange="mrec('${e.id}').att.extraHours=+this.value||0;save();renderDet()"> h　＝ 工時工資 <b>${N(val(c.earnings,'工時工資'))}</b>`;
   if(c.restShort?.length)sm+='<br>休息日加班打卡差額：'+c.restShort.map(q=>esc(q.date)+' 遲到 '+q.late+' 分、早退 '+q.early+' 分'+(q.status==='pending'?'（薪資單待核對）':q.status==='personal'?'（已列全勤）':q.status==='leave'?'（休息日請假給薪另核）':'（不列全勤）')).join('；');
   if(lock)sm+='<br><span class="pill ok">本月薪資單已確認，明細鎖定</span>';
@@ -2664,7 +2757,11 @@ function rmDet(i){const r=mrec(det.id),a=detArr(),d=a[i];if(r.confirmed||!d)retu
     if(d.leaveDeskHadPending)a[i]={date:d.date,wk:wkOf(d.date),kind:'work',status:'pending',in:'',out:'',wh:0,punches:0,hours:null};
     else a.splice(i,1);
     addLog('移除請假登記',d.date+' '+(DST[d.status]||''),curYM(),det.id);
-  }else a.splice(i,1);
+  }else{
+    if(d.hourlyHolidayReview&&!confirm('移除 '+d.date+' 出勤及假日核對？若原應照給或已有實際出勤，不應刪除。'))return;
+    if(d.hourlyHolidayReview)addLog('移除計時國定假日核對',d.date,curYM(),det.id);
+    a.splice(i,1);
+  }
   save();renderDet();}
 function addDet(){if(mrec(det.id).confirmed)return;const a=+$('d_a').value||0,arr=detArr();const d=det.kind==='items'?'x':$('d_date').value;if(!d){toast('請選日期');return;}
   if(det.kind==='items'){const nm=$('d_name').value.trim();if(!nm){toast('請輸入項目名稱');return;}if(!a){toast('請輸入金額');return;}
@@ -2814,7 +2911,7 @@ function renderSlips(){
     const dis=c.locked?' disabled':'',r=peekRec(e.id,ym),dates=payrollSlipDates(r,ym),who=payrollIdentity(e,c);
     const mark=l=>c.overridden.includes(l)?' <span style="color:var(--gold);font-size:11px">✎</span>':'';
     const inp=(lb,val,neg)=>`<span class="v">${neg&&val?'<span class="mn">-</span>':''}<input class="slip-in${c.overridden.includes(lb)?' ovon':''}" type="text" inputmode="decimal" value="${N(val)}" data-eid="${e.id}" data-lb="${esc(lb)}"${dis} onchange="slipEdit(this)" title="點此可直接修改"></span>`;
-    const earn=visibleRows(c,c.earnings).map(x=>{const hd=hourDetail(c,x[0]);return `<div class="li"><span class="lb">${x[0]}${mark(x[0])}${hd?`<small class="hd">${esc(hd)}</small>`:''}</span>${inp(x[0],x[1],false)}</div>`;}).join('');
+    const earn=visibleRows(c,c.earnings).map(x=>{const hd=hourDetail(c,x[0]),holidayDetails=x[0]==='假日/特休照給'?(c.rotatingPaidDates||[]):[];return `<div class="li"><span class="lb">${x[0]}${mark(x[0])}${hd?`<small class="hd">${esc(hd)}</small>`:''}${holidayDetails.length?`<small class="hd">${esc(holidayDetails.map(([date,h])=>date+' '+D2(h)+' 小時').join('；'))}</small>`:''}</span>${inp(x[0],x[1],false)}</div>`;}).join('');
     const ded=visibleRows(c,c.deducts).map(x=>`<div class="li${x[1]?'':' zero'}"><span class="lb">${x[0]}${mark(x[0])}</span>${inp(x[0],x[1],true)}</div>`).join('');
     const notes=[];const lt=lateText(c);if(lt)notes.push(lt);if(c.perfectNote)notes.push('全勤：'+c.perfectNote);if(c.otNote)notes.push('加班費：'+c.otNote);(c.warns||[]).forEach(w=>notes.push('⚠ '+w));c.payNotes.forEach(n=>notes.push('特休未休工資：'+n+'（本期日薪 '+N(c.dw)+'；遞延依原期基準）'));(c.negNotes||[]).forEach(n=>notes.push('特休透支：'+n));
     const cbadge=c.confirmed?'<span class="cbadge yes">✓ 已確認核算</span>':'<span class="cbadge no">草稿：尚未確認</span>';
@@ -3218,7 +3315,7 @@ function renderItems(){const e=emp(det.id),m=mrec(e.id),arr=m.items,lock=m.confi
 
 /* ===== 出勤日曆：時間輸入、依排班產生 ===== */
 function dayFromTimes(d){const a=timeToMin(d.in),b=timeToMin(d.out);if(a!=null&&b!=null&&b>a){d.wh=b-a;d.punches=Math.max(2,d.punches||0);if(d.status==='pending'||d.status==='missing')d.status='work';}}
-function fillSched(i){if(mrec(det.id).confirmed||mrec(det.id).days[i]?.leaveDesk===true){toast('此筆請假登記或已確認紀錄不能帶入出勤。');return;}const e=emp(det.id),d=mrec(e.id).days[i],g=schedFor(e,d.wk,d.date);if(!g.start||!g.end){toast('此員工該日沒有設定上下班時間');return;}
+function fillSched(i){if(mrec(det.id).confirmed||mrec(det.id).days[i]?.leaveDesk===true){toast('此筆請假登記或已確認紀錄不能帶入出勤。');return;}const e=emp(det.id),d=mrec(e.id).days[i],g=schedFor(e,d.wk,d.date);if(rotatingHolidayRow(e,d,employeeHolidaySet(e))){toast('計時國定假日不可用每週樣板補登出勤。');return;}if(!g.start||!g.end){toast('此員工該日沒有設定上下班時間');return;}
   d.in=g.start;d.out=g.end;dayFromTimes(d);d.status='work';d.manual=true;addLog('手動登錄出勤',d.date+' '+d.in+'–'+d.out,curYM(),e.id);save();renderDet();}
 function genDays(){const e=emp(det.id),m=mrec(e.id),R=ymRange(curYM()),hol=employeeHolidaySet(e),have=new Set(m.days.map(d=>d.date));let n=0;
   const pr=employment(e,curYM());
@@ -3227,7 +3324,7 @@ function genDays(){const e=emp(det.id),m=mrec(e.id),R=ymRange(curYM()),hol=emplo
     m.days.push({date:dt,wk,in:'',out:'',wh:0,punches:0,kind:'work',status:hol.has(dt)?'holiday':'pending',hours:null});n++;}
   m.days.sort((a,b)=>a.date.localeCompare(b.date));addLog('依排班產生應出勤日',n+' 天',curYM(),e.id);save();renderDet();toast(n?'已新增 '+n+' 個應出勤日':'沒有需要新增的日期（請確認排班設定有「工作日」）');}
 function fillAllPending(){const e=emp(det.id),m=mrec(e.id);
-  const todo=m.days.filter(d=>d.status==='pending').map(d=>({d,g:schedFor(e,d.wk,d.date)})).filter(x=>x.g.start&&x.g.end);
+  const hol=employeeHolidaySet(e),todo=m.days.filter(d=>d.status==='pending'&&!rotatingHolidayRow(e,d,hol)).map(d=>({d,g:schedFor(e,d.wk,d.date)})).filter(x=>x.g.start&&x.g.end);
   if(!todo.length){toast('沒有可依排班時間帶入的待確認日');return;}
   if(!confirm('將 '+todo.length+' 個「未打卡・待確認」的排班日，以排班時間登錄為出勤？\n（僅適用沒有打卡、已人工確認有出勤的情況）'))return;
   todo.forEach(({d,g})=>{d.in=g.start;d.out=g.end;dayFromTimes(d);d.status='work';d.manual=true;});
@@ -3531,7 +3628,7 @@ $('absUnit').value=String(state.settings.absUnit??30);
 $('typhoonList').addEventListener('change',()=>{state.settings.typhoonDates=$('typhoonList').value;addLog('修改停止上班日','');save();renderActive();toast('已更新停止上班日');});
 $('tyPay').addEventListener('change',()=>{state.settings.typhoonPay=$('tyPay').value;addLog('修改颱風假工資',$('tyPay').value);save();renderActive();});
 $('tyExtra').addEventListener('change',()=>{state.settings.typhoonExtra=$('tyExtra').value;addLog('修改天災出勤加給',$('tyExtra').value);save();renderActive();});
-$('hhOff').addEventListener('change',()=>{state.settings.hourlyHolidayOff=$('hhOff').checked;addLog('修改計時人員國定假日',$('hhOff').checked?'不排班（依勞動契約）':'照排班，國定假日照給');save();renderActive();});
+$('hhOff').addEventListener('change',()=>{state.settings.hourlyHolidayOff=$('hhOff').checked;addLog('修改計時人員國定假日',$('hhOff').checked?'2026 排班制逐日核對，不套每週樣板':'保留固定班表原計算方式');save();renderActive();});
 </script>
 </body>
 </html>
