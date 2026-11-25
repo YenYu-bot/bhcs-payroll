@@ -25,7 +25,7 @@ const original=JSON.stringify(state);
 `);
 const msg=()=>get('parseMsg').innerHTML;
 run('ingestRows(punch,"<test>.xlsx")');
-assert.match(msg(),/尚未寫入.*新增 1 人、覆蓋 1 人、已確認略過 1 人、請假保護略過 1 人/);
+assert.match(msg(),/尚未寫入.*新增 1 人、覆蓋 1 人、已確認略過 1 人、既有核對／請假保護略過 1 人/);
 assert.match(msg(),/&lt;test&gt;/);
 assert.deepEqual(t('attendancePreview.entries.map(x=>[x.eid,x.status,x.dates.length])'),[['x','overwrite',2],['y','add',1],['z','locked',1],['p','protected',1]]);
 assert.deepEqual(t('[JSON.stringify(state)===original,curYM(),writes]'),[true,'2027-01',0]);
