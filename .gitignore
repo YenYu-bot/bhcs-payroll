@@ -1,4 +1,4 @@
 node_modules/
 .firebase/
 *-debug.log
-leave-public/config.mjs
+leave-functions/.env*
