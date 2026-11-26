@@ -8,9 +8,9 @@ const r=s=>vm.runInContext(s,context);
 r(source.slice(0,source.indexOf('function bootUI()')));
 get('pYear').value=2026;get('pMonth').value=12;
 r(`
-  const w={id:'w',name:'測試月薪',payType:'monthly',salary:36000,sched:defaultSched(),hire:'2024-01-01'};
+  const w={id:'w',name:'測試月薪',payType:'monthly',salary:36000,empNo:'WORK-001',sched:defaultSched(),hire:'2024-01-01'};
   Object.assign(w.sched.d4,{type:"work",start:"15:00",end:"22:00",breakM:30});
-  const h={...w,id:'h',payType:'hourly'};
+  const h={...w,id:'h',empNo:'WORK-002',payType:'hourly'};
   state.employees=[w,h];
   localDB.ready=true;sec.key={};sec.locked=false;
   dataOp=fn=>Promise.resolve().then(()=>fn(dataEpoch));
@@ -18,7 +18,7 @@ r(`
   replaceLocalState=async next=>{validateState(next);state=JSON.parse(JSON.stringify(next));writes++;};
   savedOK=schedulePush=renderActive=()=>{};
   const dt='2026-12-10', id='AAAAAA00000000000000', id2='BBBBBB00000000000000';
-  const req={employeeId:'w',date:dt,type:'carePersonal',minutes:0,start:'',end:'',status:'approved'};
+  const req={employeeId:'w',date:dt,type:'carePersonal',minutes:0,start:'',end:'',status:'approved',scope:'production'};
   const one=()=>leaveDeskRaw('w','2026-12');
 `);
 (async()=>{
@@ -28,6 +28,12 @@ r(`
  assert.equal((await r("leavePortalApply({...req,date:'2026-11-28'},id)")).ok,false);
  assert.equal((await r("leavePortalApply({...req,date:'2026-12-25'},id)")).ok,false);
  assert.equal(r('writes'),0);
+ assert.equal((await r("leavePortalApply({...req,scope:undefined},id)")).ok,false);
+ assert.equal((await r("leavePortalApply({...req,employeeId:'PILOT-ONLY-0001'},id)")).ok,false);
+ assert.equal((await r("leavePortalApply({...req,employeeId:'QA-NOV-01'},id)")).ok,false);
+ assert.equal((await r("leavePortalApply({...req,employeeId:'WORK-001',payrollMatch:'empNo'},id)")).ok,true);
+ assert.equal((await r("leavePortalApply({...req,employeeId:'WORK-001',payrollMatch:'empNo'},id)")).already,true);
+
  const z=await r('leavePortalApply(req,id)');
  assert.equal(z.ok,true,JSON.stringify(z));
  assert.equal(r('one().days.length'),1);

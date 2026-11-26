@@ -22,13 +22,28 @@ service cloud.firestore {
     function req(id) { return get(/databases/$(database)/documents/leaveRequests/$(id)).data; }
     function nextReq(id) { return getAfter(/databases/$(database)/documents/leaveRequests/$(id)).data; }
     function photo(id) { return /databases/$(database)/documents/leaveProof/$(id); }
+    function proofIntake(d) {
+      return d.get('scope','') != 'production' ||
+        (d.get('proofOnline',false) == true &&
+         get(/databases/$(database)/documents/leaveMembers/$(d.owner)).data.get('formalProofOnline',false) == true);
+    }
     function hasReviewFields(d) {
       return d.reviewBy == request.auth.uid && d.reviewAt == request.time;
     }
+    function validScope(d) {
+      return member().get('formalPayroll', false) == true
+        ? (d.get('scope', '') == 'production' && d.employeeId.size() > 0 &&
+           !d.employeeId.matches('(?i)(pilot|qa|demo|test)(-|$).*')
+           && d.get('payrollMatch', '') == member().get('payrollMatch','')
+           && d.get('payrollMatch', '') in ['', 'empNo']
+           && d.proofOnline is bool && d.proofOnline == member().get('formalProofOnline',false))
+        : !d.keys().hasAny(['scope','payrollMatch','proofOnline']);
+    }
     function validNew(d) {
       return d.keys().hasAll(['owner','employeeId','employeeLabel','date','type','minutes','start','end','status','createdAt','proofRequired'])
-        && d.keys().hasOnly(['owner','employeeId','employeeLabel','date','type','minutes','start','end','status','createdAt','proofRequired'])
+        && d.keys().hasOnly(['owner','employeeId','employeeLabel','date','type','minutes','start','end','status','createdAt','proofRequired','scope','payrollMatch','proofOnline'])
         && d.owner == request.auth.uid && d.employeeId == member().employeeId && d.employeeLabel == member().label
+        && validScope(d)
         && d.date is string && d.date.matches('20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])')
         && d.type in ['annual','sick','personal','family','carePersonal','paidLeave','menstrual','protectedSick']
         && d.minutes is int && d.minutes >= 0 && d.minutes <= 480
@@ -56,7 +71,7 @@ service cloud.firestore {
         let keys = d.diff(old).affectedKeys();
         return (old.status in ['pending','needsProof'] && d.status in ['approved','rejected','needsProof']
           && keys.hasOnly(['status','proofRequired','reviewAt','reviewBy']) && hasReviewFields(d)
-          && ((d.status == 'needsProof' && d.proofRequired == true && !exists(photo(id))) ||
+          && ((d.status == 'needsProof' && d.proofRequired == true && proofIntake(old) && !exists(photo(id))) ||
             (d.status == 'rejected' && d.proofRequired == old.proofRequired) ||
             (d.status == 'approved' && d.proofRequired == old.proofRequired && (!old.proofRequired || exists(photo(id))))))
           || (old.status == 'approved' && d.status in ['applied','manual']
@@ -67,7 +82,7 @@ service cloud.firestore {
       // Get only: no listing of proof. Reading authority always follows the parent.
       allow get: if canRead(req(id).owner);
       allow create: if staff() && nextReq(id).owner == request.auth.uid
-        && nextReq(id).status in ['pending','needsProof']
+        && nextReq(id).status in ['pending','needsProof'] && proofIntake(nextReq(id))
         && request.resource.data.keys().hasAll(['jpeg','createdAt'])
         && request.resource.data.keys().hasOnly(['jpeg','createdAt'])
         && request.resource.data.createdAt == request.time && request.resource.data.jpeg is bytes

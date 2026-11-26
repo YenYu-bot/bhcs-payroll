@@ -65,3 +65,29 @@ exports.exchangeJournalLogin=onRequest({
   res.status(503).json({status:'unavailable'});
  }
 });
+
+const {validDays,staffLease,occupiedDays}=require('./occupancy.cjs');
+exports.checkLeaveDates=onRequest({
+ region:'asia-east1',serviceAccount:'leave-auth-runtime@bhcs-leave.iam.gserviceaccount.com',maxInstances:1,minInstances:0,cpu:'gcf_gen1',concurrency:1,memory:'256MiB',timeoutSeconds:20
+},async(req,res)=>{
+ res.set('Cache-Control','no-store');res.set('Vary','Origin');
+ if((process.env.GCLOUD_PROJECT??process.env.GOOGLE_CLOUD_PROJECT)!==targetProject){res.status(503).end();return;}
+ if(req.get('origin')!==staffOrigin){res.status(403).end();return;}
+ res.set('Access-Control-Allow-Origin',staffOrigin);res.set('Access-Control-Allow-Methods','POST, OPTIONS');res.set('Access-Control-Allow-Headers','Authorization, Content-Type');
+ if(req.method==='OPTIONS'){res.status(204).end();return;}
+ if(req.method!=='POST'){res.status(405).end();return;}
+ const token=(req.get('authorization')??'').match(/^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/)?.[1];
+ if(!token||token.length>4096){res.status(401).end();return;}
+ let decoded;
+ try{decoded=await getAuth(staffApp).verifyIdToken(token);}catch{res.status(401).end();return;}
+ if(!/^leave_[A-Za-z0-9_-]{16,80}$/.test(decoded.uid)||!validDays(req.body?.dates)){res.status(400).end();return;}
+ try{
+  const member=(await db.collection('leaveMembers').doc(decoded.uid).get()).data();
+  if(!staffLease(decoded.uid,decoded,member,Date.now())){res.status(403).end();return;}
+  const dates=await occupiedDays(req.body.dates,decoded.uid,async date=>{
+   const rows=await db.collection('leaveRequests').where('date','==',date).select('status','owner','scope').get();
+   return rows.docs.map(doc=>doc.data()).filter(row=>(row.scope==='production')===(member.formalPayroll===true));
+  });
+  res.status(200).json({dates});
+ }catch{res.status(503).end();}
+});

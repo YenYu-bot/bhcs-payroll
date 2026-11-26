@@ -2879,10 +2879,13 @@ async function leavePortalApply(req,requestId){
   const fail=error=>({ok:false,error});
   if(!sec.key||sec.locked||sec.locking||!localDB.ready||persistence.external||persistence.loadBlocked||persistence.freezeCount||cloud.conflict||cloud.uncertain)return fail('薪資尚未解鎖，或有同步衝突。');
   if(!req||req.status!=='approved'||!/^[A-Za-z0-9]{20}$/.test(requestId)||!LEAVE_ST.includes(req.type))return fail('查不到可帶入的已核准假單。');
+  if(req.scope!=='production'||typeof req.employeeId!=='string'||!req.employeeId.trim()||/^(?:PILOT(?:-|$)|QA(?:-|$)|DEMO(?:-|$)|TEST(?:-|$))/i.test(req.employeeId))return fail('試用、測試或未確認為正式的假單，不能帶入正式薪資。');
   if(typeof req.date!=='string'||leaveDeskDayKey(req.date)!==req.date)return fail('請假日期無效。');
   if(req.date.slice(0,7)!==curYM())return fail('請先切換上方計薪月份到 '+req.date.slice(0,7)+'，再重試。');
-  const e=emp(req.employeeId);
-  if(!e)return fail('員工帳號尚未對應到既有薪資員工，請核對設定。');
+  if(req.payrollMatch!=null&&req.payrollMatch!=='empNo')return fail('工號對應方式不明，請先核對。');
+  const payrollMatches=req.payrollMatch==='empNo'?state.employees.filter(x=>typeof x.empNo==='string'&&x.empNo!==''&&x.empNo===req.employeeId):state.employees.filter(x=>x.id===req.employeeId);
+  if(payrollMatches.length!==1)return fail('無法唯一對應薪資員工，請先核對工號，不會依姓名猜測。');
+  const e=payrollMatches[0];
   const r=leaveDeskRaw(e.id,curYM());
   const receipt=r?.leavePortalReceipts?.[requestId];
   if(receipt){
