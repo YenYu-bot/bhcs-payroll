@@ -2867,7 +2867,7 @@ async function toggleLeavePortal(){
     if(!document.getElementById('leavePortalCss')){
       const css=document.createElement('link');css.id='leavePortalCss';css.rel='stylesheet';css.href='./leave-public/portal.css';document.head.append(css);
     }
-    const mod=await import('./leave-public/portal.mjs');
+    const mod=await import('./leave-public/portal.mjs?v=journal-id-1');
     if(rev!==leavePortalRevision)return;
     const host=document.createElement('div');box.replaceChildren(host);
     const stop=await mod.mountLeave(host,'manager',(request,id,confirmation)=>rev===leavePortalRevision?leavePortalApply(request,id,confirmation):{ok:false,error:'主管畫面已關閉，請重新核對。'});
@@ -2881,20 +2881,22 @@ function leavePortalPayrollTarget(req){
     const owner=req.owner;
     if(typeof owner!=='string'||!/^leave_[A-Za-z0-9_-]{16,80}$/.test(owner)||req.employeeId!==owner)return fail('教室日誌身分無效，請先核對。');
     const links=state.settings.leaveJournalLinks??{};
-    const unique=e=>typeof e?.empNo==='string'&&e.empNo.trim()===e.empNo&&e.empNo!==''&&typeof e.id==='string'&&e.id!==''&&
-      state.employees.filter(x=>x.empNo===e.empNo).length===1&&state.employees.filter(x=>x.id===e.id).length===1;
-    const taken=e=>Object.entries(links).some(([uid,b])=>uid!==owner&&(b.employeeId===e.id||b.empNo===e.empNo));
+    const unique=e=>typeof e?.id==='string'&&e.id.trim()===e.id&&e.id!==''&&
+      state.employees.filter(x=>x.id===e.id).length===1;
+    const taken=e=>Object.entries(links).some(([uid,b])=>uid!==owner&&b.employeeId===e.id);
     if(Object.hasOwn(links,owner)){
-      const b=links[owner],e=state.employees.find(x=>x.id===b.employeeId&&x.empNo===b.empNo);
-      return e&&unique(e)&&!taken(e)?{employee:e}:fail('已綁定的薪資工號異動或重複，不會改用姓名，請先由主管核對。');
+      const e=state.employees.find(x=>x.id===links[owner].employeeId);
+      return e&&unique(e)&&!taken(e)?{employee:e}:fail('已綁定的薪資員工不存在、內部識別碼重複或綁定衝突。不會改用姓名，請由主管核對。');
     }
     const name=typeof req.employeeLabel==='string'?req.employeeLabel.trim().normalize('NFC'):'';
     if(!name)return fail('教室日誌沒有可核對的姓名，不會帶入考勤。');
     const matches=state.employees.filter(e=>typeof e.name==='string'&&e.name.trim().normalize('NFC')===name);
     if(matches.length!==1)return fail(matches.length?'薪資系統有同名員工，不會自動帶入，請人工核對。':'薪資系統找不到同名員工，不會自動帶入，請人工核對。');
     const e=matches[0];
-    if(!unique(e)||taken(e))return fail('該員工工號未填、重複，或已綁定其他帳號，不會帶入考勤。');
-    return {employee:e,link:{owner,employeeId:e.id,empNo:e.empNo},preview:{name:e.name,empNo:e.empNo,token:JSON.stringify([owner,e.id,e.empNo,e.name,req.employeeLabel,req.date,req.type,curYM()])}};
+    if(!unique(e))return fail('薪資員工的內部識別碼無效或重複，不會帶入考勤。');
+    if(taken(e))return fail('該薪資員工已綁定其他帳號，不會帶入考勤。');
+    const role=typeof e.role==='string'?e.role.trim():'';
+    return {employee:e,link:{owner,employeeId:e.id},preview:{name:e.name,role,token:JSON.stringify([owner,e.id,e.name,role,req.employeeLabel,req.date,req.type,curYM()])}};
   }
   if(req.payrollMatch!=null&&req.payrollMatch!=='empNo')return fail('工號對應方式不明，請先核對。');
   const matches=req.payrollMatch==='empNo'?state.employees.filter(x=>typeof x.empNo==='string'&&x.empNo!==''&&x.empNo===req.employeeId):state.employees.filter(x=>x.id===req.employeeId);
@@ -2911,7 +2913,7 @@ async function leavePortalApply(req,requestId,confirmation){
   const target=leavePortalPayrollTarget(req);
   if(target.error)return fail(target.error);
   const e=target.employee;
-  if(confirmation!==undefined&&(!target.preview||JSON.stringify([requestId,target.preview.token])!==confirmation))return fail('姓名、工號或綁定狀態已變更，請重新核對。');
+  if(confirmation!==undefined&&(!target.preview||JSON.stringify([requestId,target.preview.token])!==confirmation))return fail('姓名、員工資料或綁定狀態已變更，請重新核對。');
   const other=Object.entries(state.months[curYM()]||{}).some(([id,row])=>id!==e.id&&row?.leavePortalReceipts?.[requestId]);
   if(other)return fail('這張假單已在另一位員工名下登記，請人工核對。');
   const r=leaveDeskRaw(e.id,curYM());
@@ -2951,7 +2953,7 @@ async function leaveDeskRegister(form,expectedToken){
       if(!full&&(!Number.isFinite(requested)||Math.abs(requested*60-minutes)>1e-7)||minutes<1||minutes>check.minutes)throw Error('請假時數須為完整分鐘，且不能超過當日淨排班。');
       if(type==='menstrual'&&(minutes!==check.minutes||leaveDeskEntries(id).some(x=>x.type==='menstrual')))throw Error('此版本的生理假僅支援整個班別，且本月不能重複登記；請先核對。');
       const e=emp(id),ym=curYM(),expected=JSON.stringify(state),next=JSON.parse(expected);
-      if(link)(next.settings.leaveJournalLinks??={})[link.owner]={employeeId:link.employeeId,empNo:link.empNo};
+      if(link)(next.settings.leaveJournalLinks??={})[link.owner]={employeeId:link.employeeId};
       const month=next.months[ym]||(next.months[ym]={}),r=normRec(Object.hasOwn(month,id)?month[id]:blankRec());
       month[id]=r;
       const index=r.days.findIndex(d=>d.date===date);
@@ -2963,7 +2965,7 @@ async function leaveDeskRegister(form,expectedToken){
       }
       if(index<0)r.days.push(row);else r.days[index]=row;
       r.days.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
-      next.log=[...(next.log||[]),{t:new Date().toISOString(),action:'請假登記',detail:(link?'已確認教室日誌帳號與薪資工號；':'')+date+' '+DST[type]+' '+minutes+' 分鐘',ym,emp:e.name||id}].slice(-3000);
+      next.log=[...(next.log||[]),{t:new Date().toISOString(),action:'請假登記',detail:(link?'已確認教室日誌帳號與薪資員工；':'')+date+' '+DST[type]+' '+minutes+' 分鐘',ym,emp:e.name||id}].slice(-3000);
       await replaceLocalState(next,sec.key,sec.salt,epoch,expected,sec.pendingCloud);
       savedOK();schedulePush();return {ok:true};
     });
@@ -3476,7 +3478,8 @@ function isRecord(x){return x!==null&&typeof x==='object'&&!Array.isArray(x);}
 function validateState(s){if(!isRecord(s)||s.version!==3||!isRecord(s.settings)||!Array.isArray(s.employees)||s.employees.some(e=>!isRecord(e))||!isRecord(s.months)||(s.log!==undefined&&!Array.isArray(s.log)))throw new Error('薪資資料格式不完整');
   if(s.log&&s.log.some(x=>!isRecord(x)||['t','ym','emp','action','detail'].some(k=>x[k]!==undefined&&typeof x[k]!=='string')))throw new Error('異動紀錄格式錯誤');if(s.settings.seasons!=null&&!isRecord(s.settings.seasons))throw new Error('寒暑假設定格式錯誤');
   const links=s.settings.leaveJournalLinks;
-  if(links!==undefined&&(!isRecord(links)||Object.entries(links).some(([uid,b])=>!/^leave_[A-Za-z0-9_-]{16,80}$/.test(uid)||!isRecord(b)||Object.keys(b).length!==2||typeof b.employeeId!=='string'||!b.employeeId||typeof b.empNo!=='string'||!b.empNo||b.empNo.trim()!==b.empNo)))throw Error('請假帳號對應資料格式不完整');
+  if(links!==undefined&&(!isRecord(links)||Object.entries(links).some(([uid,b])=>!/^leave_[A-Za-z0-9_-]{16,80}$/.test(uid)||!isRecord(b)||Object.keys(b).some(k=>k!=='employeeId'&&k!=='empNo')||typeof b.employeeId!=='string'||!b.employeeId||b.employeeId.trim()!==b.employeeId||
+    (Object.hasOwn(b,'empNo')&&(typeof b.empNo!=='string'||!b.empNo||b.empNo.trim()!==b.empNo)))))throw Error('請假帳號對應資料格式不完整');
   const stack=[s];while(stack.length){const x=stack.pop();if(x&&typeof x==='object')for(const [k,v]of Object.entries(x)){if(typeof v==='number'&&!Number.isFinite(v))throw new Error('資料含非有限數值，未讀取');if(['__proto__','prototype','constructor'].includes(k))throw new Error('資料含不安全欄位');if(v&&typeof v==='object')stack.push(v);}}
   for(const e of s.employees){if(e.calendarPlans!=null&&(!isRecord(e.calendarPlans)||Object.values(e.calendarPlans).some(p=>!isRecord(p)||!Array.isArray(p.rows)||p.rows.some(x=>!isRecord(x)))))throw new Error('年度假日映射格式錯誤');if(e.leaveWageBases!=null&&(!isRecord(e.leaveWageBases)||Object.values(e.leaveWageBases).some(b=>!isRecord(b)||!Array.isArray(b.history))))throw new Error('遞延工資基準資料格式錯誤');if(e.sched!=null&&!isRecord(e.sched))throw new Error('排班資料格式錯誤');if(e.fixedItems!=null&&(!Array.isArray(e.fixedItems)||e.fixedItems.some(x=>!isRecord(x))))throw new Error('固定薪資項目格式錯誤');}
   for(const [ym,M]of Object.entries(s.months)){if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)||!isRecord(M)||Object.values(M).some(r=>!isRecord(r)))throw new Error('月份資料格式錯誤');
