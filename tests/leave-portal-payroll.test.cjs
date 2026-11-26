@@ -22,6 +22,17 @@ r(`
   const one=()=>leaveDeskRaw('w','2026-12');
 `);
 (async()=>{
+ assert.equal(r('restAnnualQuote(150,180,0,180).total'),650);
+ assert.equal(r('restAnnualQuote(150,180,0,180).workedMin'),0);
+ assert.equal(r('restAnnualQuote(150,180,60,120).annualPay'),450);
+ assert.equal(r('restAnnualQuote(150,180,60,120).workedPay'),200);
+ assert.equal(r('restAnnualQuote(150,180,60,90)'),null);
+ assert.equal(r('restAnnualQuote(150,721,1,720)'),null);
+ assert.equal(r('restAnnualQuote(150,180,30.5,149.5)'),null);
+ assert.equal(r('restAnnualQuote(NaN,180,0,180)'),null);
+ assert.equal(r('writes'),0);
+ console.log('PASS: rest-day annual leave quote uses daily premium tiers, keeps worked minutes separate, and never writes state.');
+
  assert.equal((await r("leavePortalApply({...req,status:'pending'},id)")).ok,false);
  assert.equal((await r("leavePortalApply({...req,employeeId:'h'},id)")).ok,false);
  assert.equal((await r("leavePortalApply({...req,minutes:60,start:'15:00',end:'16:00'},id)")).ok,false);

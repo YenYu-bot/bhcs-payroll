@@ -1862,6 +1862,22 @@ function schoolPrioritySplit(pool,normal,coverFactor){
   const fixed=Math.min(pool,Math.max(0,Math.ceil(exact-1e-8)));
   return {fixed,allowance:pool-fixed};
 }
+// 百宏核准的休息日加班特休：試算同日級距，請假並非實際延長工時。
+function restAnnualQuote(hr,agreedMin,workedMin,annualMin){
+  if(!Number.isFinite(hr)||hr<=0||![agreedMin,workedMin,annualMin].every(Number.isSafeInteger)||
+      agreedMin<1||agreedMin>720||workedMin<0||annualMin<1||workedMin+annualMin!==agreedMin)return null;
+  const full=otPayDay('rest',agreedMin/60,hr,false),worked=otPayDay('rest',workedMin/60,hr,false);
+  return {workedMin,annualMin,workedPay:worked,annualPay:full-worked,total:full};
+}
+function showRestAnnualQuote(form){
+  const e=emp(form.dataset.eid),ym=curYM(),get=k=>form.elements.namedItem(k).value;
+  const message=form.querySelector('[role=status]');
+  if(!e||ym!==form.dataset.ym||sec.locked||!form.reportValidity())return;
+  const h=compute(e,ym).hr;
+  const out=restAnnualQuote(h,...['agreed','worked','annual'].map(k=>get(k)===''?NaN:Number(get(k))));
+  message.textContent=!out?'請核對：原約定與已核准特休須有時數，且實際出勤＋特休須等於原約定淨工時。其他混合缺勤請人工核算。'
+    :'本日試算：實際加班 '+out.workedMin+' 分、'+D2(out.workedPay)+' 元；特休給付 '+out.annualMin+' 分、'+D2(out.annualPay)+' 元；合計 '+D2(out.total)+' 元。以未進位金額納入當月對帳；本試算不入帳、不扣特休。';
+}
 function schoolOvertime(plan,groups,hr){
   // 分項向上至整元，不短給；月額只涵蓋同月明定的休息日。
   const coverLegal=Math.ceil(groups.coverFactor*hr-1e-8),otherPay=Math.ceil(groups.otherFactor*hr-1e-8);
@@ -1901,6 +1917,18 @@ function schoolPayBlock(e,c){
   <p>特休未休工資另列；依本人期末或離職結算，不因本月發續班獎金而提前折現。</p>`;
   return `<details class="note no-print"${cfg?' open':''}><summary><b>百宏薪資規則｜全勤、休息日加班、續班與寒暑期${cfg?'（本月已設定）':'（未套用）'}</b></summary>
   <p>僅影響此員工、此薪資月。寒暑假起訖是本月範圍（兩端皆含），整月學期留白；整月寒暑假填當月第一天至最後一天。1、2 月有寒假時，先付列入月額的休息日加班，餘額列津貼，不按寒假日數比例拆分。</p>
+  <details>
+    <summary><b>休息日加班已核准特休｜同月結算規則與試算</b></summary>
+    <p>僅限已約定、未取消的休息日加班，且員工申請的特休已核准、適用及時數也已核實。核准特休的時段按休息日加班費級距給付，不以平日底薪折算；只把實際出勤的分鐘列為加班工時。當月按已核實的出勤與假別結算，和同月預發加班費對帳，不跨月扣抵，不與定額／補差額重複列付。</p>
+    <p>本試算不改班表、不扣特休、不寫薪資。先核對整段約定淨工時、實際工時及核准特休，再由主管處理原假單。尚未核實的假單不得當未請假減發；月結前請先核對「已核准・待登記考勤」。</p>
+    <form data-eid="${esc(e.id)}" data-ym="${esc(ym)}" onsubmit="event.preventDefault();showRestAnnualQuote(this)">
+      <label>原約定淨工時（分鐘）<input name="agreed" type="number" min="1" max="720" step="1" required></label>
+      <label>實際加班（分鐘）<input name="worked" type="number" min="0" max="720" step="1" required></label>
+      <label>核准且適用的特休（分鐘）<input name="annual" type="number" min="1" max="720" step="1" required></label>
+      <button class="btn ghost tiny" type="submit">試算，不入帳</button>
+      <p role="status"></p>
+    </form>
+  </details>
   <section aria-label="休息日定額加班費方式二">
     <p><b>方式二｜按約定 15 小時比例減發</b> · ${schoolRestReductionValid(cfg)?'已填書面約定與生效日（仍須逐筆核對）':'未啟用（生效日與書面依據皆留空時，定額照列）'}</p>
     <ol>
