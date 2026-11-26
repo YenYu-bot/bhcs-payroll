@@ -364,7 +364,7 @@ export async function mountLeave(root,mode,integrate){
         if(response.empty&&!more&&!groups)results.append(make('p','你還沒有送出假單。'));
         for(const row of response.docs){
           const status=row.data().status;
-          const target=!groups?results:['pending','needsProof'].includes(status)?groups.open:groups.closed;
+          const target=!groups?results:['pending','needsProof','approved'].includes(status)?groups.open:groups.closed;
           target.querySelector('.lv-empty')?.remove();
           target.append(card(row,user,refreshList));
         }
