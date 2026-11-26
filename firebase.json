@@ -1,0 +1,51 @@
+{
+  "firestore": {
+    "rules": "leave-backend/firestore.rules",
+    "indexes": "leave-backend/firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "leave-public",
+    "ignore": [
+      "**/.*",
+      "**/node_modules/**",
+      "**/*.example.mjs"
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(self), microphone=(), geolocation=()"
+          }
+        ]
+      }
+    ]
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8088
+    },
+    "ui": {
+      "enabled": false
+    }
+  },
+  "functions": [
+    {
+      "source": "leave-functions",
+      "codebase": "journal-auth"
+    }
+  ]
+}
