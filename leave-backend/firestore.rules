@@ -35,7 +35,9 @@ service cloud.firestore {
         ? (d.get('scope', '') == 'production' && d.employeeId.size() > 0 &&
            !d.employeeId.matches('(?i)(pilot|qa|demo|test)(-|$).*')
            && d.get('payrollMatch', '') == member().get('payrollMatch','')
-           && d.get('payrollMatch', '') in ['', 'empNo']
+           && (d.get('payrollMatch', '') in ['', 'empNo'] ||
+             (d.payrollMatch == 'journalName' && d.employeeId == request.auth.uid &&
+              d.employeeId.matches('leave_[A-Za-z0-9_-]{16,80}')))
            && d.proofOnline is bool && d.proofOnline == member().get('formalProofOnline',false))
         : !d.keys().hasAny(['scope','payrollMatch','proofOnline']);
     }

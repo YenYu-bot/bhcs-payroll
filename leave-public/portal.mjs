@@ -145,7 +145,17 @@ export async function mountLeave(root,mode,integrate){
     if(!integrate||!alive(token))throw Error('請從薪資後台的主管入口操作。');
     const d=await get(ref(id));if(!d.exists()||d.data().scope!=='production'||d.data().status!=='approved')throw Error('假單已變更，請刷新清單。');
     if(!alive(token))return;
-    const result=await integrate(d.data(),id);
+    const request=d.data();
+    let result=await integrate(request,id);
+    if(result.confirmation){
+      if(!alive(token))return;
+      const {name,empNo,token:match}=result.confirmation;
+      if(!confirm('首次核對請假帳號\n教室日誌姓名：'+request.employeeLabel+'\n薪資員工：'+name+'（工號 '+empNo+'）\n\n確認是同一人，才會綁定並帶入本張假單。'))return '假單已核准，尚未綁定或帶入考勤。';
+      const latest=await get(ref(id));
+      if(!alive(token))return;
+      if(!latest.exists()||latest.data().scope!=='production'||latest.data().status!=='approved')throw Error('假單已變更，請刷新清單。');
+      result=await integrate(latest.data(),id,match);
+    }
     if(!result.ok)throw Error('假單已核准，尚未帶入考勤：'+result.error);
     await fs.updateDoc(ref(id),{status:'applied',settledBy:user.uid,settledAt:sent()});
     return '已核准並帶入考勤。';
@@ -164,7 +174,10 @@ export async function mountLeave(root,mode,integrate){
       bar.append(button('補上證明',()=>action(async token=>{
         const bytes=await jpeg(upload.file());if(!alive(token))return;
         await fs.setDoc(proof(id),{jpeg:fs.Bytes.fromUint8Array(bytes),createdAt:sent()});upload.clear();return '照片已上傳。';
-      })),button('撤回',()=>{if(confirm('要撤回這張假單嗎？'))action(async token=>{
+      })));
+    }
+    if(mode==='staff'&&['pending','needsProof'].includes(d.status)){
+      bar.append(button('撤回',()=>{if(confirm('要撤回這張假單嗎？'))action(async token=>{
         await fs.updateDoc(ref(id),{status:'withdrawn',withdrawnAt:sent()});if(alive(token))await refresh(token);return '假單已撤回。';
       });},true));
     }
@@ -177,7 +190,7 @@ export async function mountLeave(root,mode,integrate){
         finally{if(alive(token))await refresh(token);}
         return msg;
       };
-      bar.append(button('核准並帶入考勤',()=>action(token=>review('approved',token))));
+      bar.append(button(d.payrollMatch==='journalName'?'核准並核對考勤':'核准並帶入考勤',()=>action(token=>review('approved',token))));
       if(proofOnline)bar.append(button('要求補證明',()=>action(token=>review('needsProof',token)),true));
       else box.append(make('p','證明請在櫃台核對，不收線上照片。'));
       bar.append(button('不核准',()=>{if(confirm('確定不核准這張假單？'))action(token=>review('rejected',token));},true));
@@ -263,7 +276,7 @@ export async function mountLeave(root,mode,integrate){
       const chosen=all.length===1?all:checks.filter(x=>x.checked).map(x=>x.value);
       if(!chosen.length||chosen.some(x=>!all.includes(x)))throw Error('請勾選至少一個實際有排班的日期。');
       const partial=mode.value==='part',m=partial?elapsedMinutes(start.value,end.value):0;
-      const entries=chosen.map(date=>({...(member.formalPayroll===true?{scope:'production',proofOnline:online,...(member.payrollMatch==='empNo'?{payrollMatch:'empNo'}:{})}:{}),owner:user.uid,employeeId:member.employeeId,employeeLabel:member.label,date,type:type.value,minutes:m,start:partial?start.value:'',end:partial?end.value:'',status:'pending',proofRequired:false}));
+      const entries=chosen.map(date=>({...(member.formalPayroll===true?{scope:'production',proofOnline:online,...(['empNo','journalName'].includes(member.payrollMatch)?{payrollMatch:member.payrollMatch}:{})}:{}),owner:user.uid,employeeId:member.employeeId,employeeLabel:member.label,date,type:type.value,minutes:m,start:partial?start.value:'',end:partial?end.value:'',status:'pending',proofRequired:false}));
       const payload=JSON.stringify(entries);
       const current=async docs=>Promise.all(docs.map(doc=>get(doc).catch(e=>{if(e.code==='permission-denied')return null;throw e;})));
       let existing=await current(docIds);

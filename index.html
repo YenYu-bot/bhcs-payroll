@@ -2870,22 +2870,50 @@ async function toggleLeavePortal(){
     const mod=await import('./leave-public/portal.mjs');
     if(rev!==leavePortalRevision)return;
     const host=document.createElement('div');box.replaceChildren(host);
-    const stop=await mod.mountLeave(host,'manager',(request,id)=>rev===leavePortalRevision?leavePortalApply(request,id):{ok:false,error:'主管畫面已關閉，請重新核對。'});
+    const stop=await mod.mountLeave(host,'manager',(request,id,confirmation)=>rev===leavePortalRevision?leavePortalApply(request,id,confirmation):{ok:false,error:'主管畫面已關閉，請重新核對。'});
     if(rev!==leavePortalRevision){stop();return;}
     leavePortalStop=stop;
   }catch{if(rev===leavePortalRevision)box.textContent='員工請假服務尚未啟用，或無法連線。原本的請假登記仍可使用。';}
 }
-async function leavePortalApply(req,requestId){
+function leavePortalPayrollTarget(req){
+  const fail=error=>({error});
+  if(req.payrollMatch==='journalName'){
+    const owner=req.owner;
+    if(typeof owner!=='string'||!/^leave_[A-Za-z0-9_-]{16,80}$/.test(owner)||req.employeeId!==owner)return fail('教室日誌身分無效，請先核對。');
+    const links=state.settings.leaveJournalLinks??{};
+    const unique=e=>typeof e?.empNo==='string'&&e.empNo.trim()===e.empNo&&e.empNo!==''&&typeof e.id==='string'&&e.id!==''&&
+      state.employees.filter(x=>x.empNo===e.empNo).length===1&&state.employees.filter(x=>x.id===e.id).length===1;
+    const taken=e=>Object.entries(links).some(([uid,b])=>uid!==owner&&(b.employeeId===e.id||b.empNo===e.empNo));
+    if(Object.hasOwn(links,owner)){
+      const b=links[owner],e=state.employees.find(x=>x.id===b.employeeId&&x.empNo===b.empNo);
+      return e&&unique(e)&&!taken(e)?{employee:e}:fail('已綁定的薪資工號異動或重複，不會改用姓名，請先由主管核對。');
+    }
+    const name=typeof req.employeeLabel==='string'?req.employeeLabel.trim().normalize('NFC'):'';
+    if(!name)return fail('教室日誌沒有可核對的姓名，不會帶入考勤。');
+    const matches=state.employees.filter(e=>typeof e.name==='string'&&e.name.trim().normalize('NFC')===name);
+    if(matches.length!==1)return fail(matches.length?'薪資系統有同名員工，不會自動帶入，請人工核對。':'薪資系統找不到同名員工，不會自動帶入，請人工核對。');
+    const e=matches[0];
+    if(!unique(e)||taken(e))return fail('該員工工號未填、重複，或已綁定其他帳號，不會帶入考勤。');
+    return {employee:e,link:{owner,employeeId:e.id,empNo:e.empNo},preview:{name:e.name,empNo:e.empNo,token:JSON.stringify([owner,e.id,e.empNo,e.name,req.employeeLabel,req.date,req.type,curYM()])}};
+  }
+  if(req.payrollMatch!=null&&req.payrollMatch!=='empNo')return fail('工號對應方式不明，請先核對。');
+  const matches=req.payrollMatch==='empNo'?state.employees.filter(x=>typeof x.empNo==='string'&&x.empNo!==''&&x.empNo===req.employeeId):state.employees.filter(x=>x.id===req.employeeId);
+  if(matches.length!==1||state.employees.filter(x=>x.id===matches[0].id).length!==1)return fail('無法唯一對應薪資員工，請先核對工號。');
+  return {employee:matches[0]};
+}
+async function leavePortalApply(req,requestId,confirmation){
   const fail=error=>({ok:false,error});
   if(!sec.key||sec.locked||sec.locking||!localDB.ready||persistence.external||persistence.loadBlocked||persistence.freezeCount||cloud.conflict||cloud.uncertain)return fail('薪資尚未解鎖，或有同步衝突。');
   if(!req||req.status!=='approved'||!/^[A-Za-z0-9]{20}$/.test(requestId)||!LEAVE_ST.includes(req.type))return fail('查不到可帶入的已核准假單。');
   if(req.scope!=='production'||typeof req.employeeId!=='string'||!req.employeeId.trim()||/^(?:PILOT(?:-|$)|QA(?:-|$)|DEMO(?:-|$)|TEST(?:-|$))/i.test(req.employeeId))return fail('試用、測試或未確認為正式的假單，不能帶入正式薪資。');
   if(typeof req.date!=='string'||leaveDeskDayKey(req.date)!==req.date)return fail('請假日期無效。');
   if(req.date.slice(0,7)!==curYM())return fail('請先切換上方計薪月份到 '+req.date.slice(0,7)+'，再重試。');
-  if(req.payrollMatch!=null&&req.payrollMatch!=='empNo')return fail('工號對應方式不明，請先核對。');
-  const payrollMatches=req.payrollMatch==='empNo'?state.employees.filter(x=>typeof x.empNo==='string'&&x.empNo!==''&&x.empNo===req.employeeId):state.employees.filter(x=>x.id===req.employeeId);
-  if(payrollMatches.length!==1)return fail('無法唯一對應薪資員工，請先核對工號，不會依姓名猜測。');
-  const e=payrollMatches[0];
+  const target=leavePortalPayrollTarget(req);
+  if(target.error)return fail(target.error);
+  const e=target.employee;
+  if(confirmation!==undefined&&(!target.preview||JSON.stringify([requestId,target.preview.token])!==confirmation))return fail('姓名、工號或綁定狀態已變更，請重新核對。');
+  const other=Object.entries(state.months[curYM()]||{}).some(([id,row])=>id!==e.id&&row?.leavePortalReceipts?.[requestId]);
+  if(other)return fail('這張假單已在另一位員工名下登記，請人工核對。');
   const r=leaveDeskRaw(e.id,curYM());
   const receipt=r?.leavePortalReceipts?.[requestId];
   if(receipt){
@@ -2895,16 +2923,25 @@ async function leavePortalApply(req,requestId){
   if(req.minutes!==0||req.start!==''||req.end!==''||isHourly(e))return fail('兼職或部分時段請假須先比對逐日原班表與實際打卡，再由主管在考勤處理。');
   const check=leaveDeskInspect(e.id,req.date);
   if(check.error)return fail(check.error);
-  const result=await leaveDeskRegister({id:e.id,date:req.date,type:req.type,full:true,portalId:requestId},check.token);
+  if(target.preview&&confirmation===undefined)return {ok:false,confirmation:{...target.preview,token:JSON.stringify([requestId,target.preview.token])}};
+  // The card drives this callback; recompute the match in the serialized storage operation too.
+  const result=await leaveDeskRegister({id:e.id,date:req.date,type:req.type,full:true,portalId:requestId,portalReq:req,confirmation},check.token);
   if(result.ok)renderActive();
   return result;
 }
 async function leaveDeskRegister(form,expectedToken){
-  const {id,date,type,full,hours,portalId}=form;
+  const {id,date,type,full,hours,portalId,portalReq,confirmation}=form;
   if(!LEAVE_ST.includes(type)||typeof full!=='boolean')return {ok:false,error:'請選擇有效的假別和時數方式。'};
   try{
     return await dataOp(async epoch=>{
       if(portalId&&(!sec.key||sec.locked||sec.locking||cloud.conflict||cloud.uncertain||typeof portalId!=='string'||!/^[A-Za-z0-9]{20}$/.test(portalId)))throw Error('尚未安全解鎖，請先核對同步狀態。');
+      let link;
+      if(portalId){
+        const target=leavePortalPayrollTarget(portalReq);
+        if(target.error||target.employee.id!==id||(target.preview?JSON.stringify([portalId,target.preview.token])!==confirmation:confirmation!==undefined))throw Error('員工對應已變更，請重新核對。');
+        if(Object.entries(state.months[curYM()]||{}).some(([who,row])=>who!==id&&row?.leavePortalReceipts?.[portalId]))throw Error('假單已在另一位員工名下登記，請人工核對。');
+        link=target.link;
+      }
       const check=leaveDeskInspect(id,date);
       if(check.error)throw Error(check.error);
       if(!expectedToken||check.token!==expectedToken)throw Error('月份、班表或明細已變更，請重新核對。');
@@ -2914,6 +2951,7 @@ async function leaveDeskRegister(form,expectedToken){
       if(!full&&(!Number.isFinite(requested)||Math.abs(requested*60-minutes)>1e-7)||minutes<1||minutes>check.minutes)throw Error('請假時數須為完整分鐘，且不能超過當日淨排班。');
       if(type==='menstrual'&&(minutes!==check.minutes||leaveDeskEntries(id).some(x=>x.type==='menstrual')))throw Error('此版本的生理假僅支援整個班別，且本月不能重複登記；請先核對。');
       const e=emp(id),ym=curYM(),expected=JSON.stringify(state),next=JSON.parse(expected);
+      if(link)(next.settings.leaveJournalLinks??={})[link.owner]={employeeId:link.employeeId,empNo:link.empNo};
       const month=next.months[ym]||(next.months[ym]={}),r=normRec(Object.hasOwn(month,id)?month[id]:blankRec());
       month[id]=r;
       const index=r.days.findIndex(d=>d.date===date);
@@ -2925,7 +2963,7 @@ async function leaveDeskRegister(form,expectedToken){
       }
       if(index<0)r.days.push(row);else r.days[index]=row;
       r.days.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
-      next.log=[...(next.log||[]),{t:new Date().toISOString(),action:'請假登記',detail:date+' '+DST[type]+' '+minutes+' 分鐘',ym,emp:e.name||id}].slice(-3000);
+      next.log=[...(next.log||[]),{t:new Date().toISOString(),action:'請假登記',detail:(link?'已確認教室日誌帳號與薪資工號；':'')+date+' '+DST[type]+' '+minutes+' 分鐘',ym,emp:e.name||id}].slice(-3000);
       await replaceLocalState(next,sec.key,sec.salt,epoch,expected,sec.pendingCloud);
       savedOK();schedulePush();return {ok:true};
     });
@@ -3437,6 +3475,8 @@ function cloudParts(source=state){const p={core:JSON.stringify({version:source.v
 function isRecord(x){return x!==null&&typeof x==='object'&&!Array.isArray(x);}
 function validateState(s){if(!isRecord(s)||s.version!==3||!isRecord(s.settings)||!Array.isArray(s.employees)||s.employees.some(e=>!isRecord(e))||!isRecord(s.months)||(s.log!==undefined&&!Array.isArray(s.log)))throw new Error('薪資資料格式不完整');
   if(s.log&&s.log.some(x=>!isRecord(x)||['t','ym','emp','action','detail'].some(k=>x[k]!==undefined&&typeof x[k]!=='string')))throw new Error('異動紀錄格式錯誤');if(s.settings.seasons!=null&&!isRecord(s.settings.seasons))throw new Error('寒暑假設定格式錯誤');
+  const links=s.settings.leaveJournalLinks;
+  if(links!==undefined&&(!isRecord(links)||Object.entries(links).some(([uid,b])=>!/^leave_[A-Za-z0-9_-]{16,80}$/.test(uid)||!isRecord(b)||Object.keys(b).length!==2||typeof b.employeeId!=='string'||!b.employeeId||typeof b.empNo!=='string'||!b.empNo||b.empNo.trim()!==b.empNo)))throw Error('請假帳號對應資料格式不完整');
   const stack=[s];while(stack.length){const x=stack.pop();if(x&&typeof x==='object')for(const [k,v]of Object.entries(x)){if(typeof v==='number'&&!Number.isFinite(v))throw new Error('資料含非有限數值，未讀取');if(['__proto__','prototype','constructor'].includes(k))throw new Error('資料含不安全欄位');if(v&&typeof v==='object')stack.push(v);}}
   for(const e of s.employees){if(e.calendarPlans!=null&&(!isRecord(e.calendarPlans)||Object.values(e.calendarPlans).some(p=>!isRecord(p)||!Array.isArray(p.rows)||p.rows.some(x=>!isRecord(x)))))throw new Error('年度假日映射格式錯誤');if(e.leaveWageBases!=null&&(!isRecord(e.leaveWageBases)||Object.values(e.leaveWageBases).some(b=>!isRecord(b)||!Array.isArray(b.history))))throw new Error('遞延工資基準資料格式錯誤');if(e.sched!=null&&!isRecord(e.sched))throw new Error('排班資料格式錯誤');if(e.fixedItems!=null&&(!Array.isArray(e.fixedItems)||e.fixedItems.some(x=>!isRecord(x))))throw new Error('固定薪資項目格式錯誤');}
   for(const [ym,M]of Object.entries(s.months)){if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)||!isRecord(M)||Object.values(M).some(r=>!isRecord(r)))throw new Error('月份資料格式錯誤');
