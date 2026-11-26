@@ -149,8 +149,8 @@ export async function mountLeave(root,mode,integrate){
     let result=await integrate(request,id);
     if(result.confirmation){
       if(!alive(token))return;
-      const {name,empNo,token:match}=result.confirmation;
-      if(!confirm('首次核對請假帳號\n教室日誌姓名：'+request.employeeLabel+'\n薪資員工：'+name+'（工號 '+empNo+'）\n\n確認是同一人，才會綁定並帶入本張假單。'))return '假單已核准，尚未綁定或帶入考勤。';
+      const {name,role,token:match}=result.confirmation;
+      if(!confirm('首次核對請假帳號\n教室日誌姓名：'+request.employeeLabel+'\n薪資員工：'+name+(role?'（'+role+'）':'')+'\n\n確認是同一人，才會綁定並帶入本張假單。'))return '假單已核准，尚未綁定或帶入考勤。';
       const latest=await get(ref(id));
       if(!alive(token))return;
       if(!latest.exists()||latest.data().scope!=='production'||latest.data().status!=='approved')throw Error('假單已變更，請刷新清單。');
