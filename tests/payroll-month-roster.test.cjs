@@ -20,6 +20,7 @@ run(`
  const before=JSON.stringify(state);const initialWB=workbenchRead(ym).filter(x=>x.include).map(x=>x.id);
 `);
 assert.deepEqual(value('initialWB'),['a']);assert.equal(run('JSON.stringify(state)===before'),true);
+run('verifiedLeaveClose(curYM(),{pending:0,needsProof:0,approved:0,unknown:0},Date.now())');
 assert.equal(run('setConfirm("a",true)'),true);
 if(process.argv.includes('--baseline')){
  assert.equal(run('payrollReadyForOutput(false)'),false);

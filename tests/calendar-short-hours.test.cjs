@@ -43,6 +43,7 @@ for(const [end,hours] of [['20:30',6.5],['21:30',7.5],['22:00',8]]){
   assert.match(get('detSummary').innerHTML,new RegExp('國定假日 '+hours+'h'));
   assert.deepEqual(t("calendarMonthIssues(fixture,'2027-01',fx.m,true)"),[]);
   assert.equal(t("scheduledPaidHours(fixture,fx.m.days[0].wk,fx.m.days[0].date)"),hours);
+t('verifiedLeaveClose(curYM(),{pending:0,needsProof:0,approved:0,unknown:0},Date.now())');
   assert.equal(t("(recordCalendarReview(fixture,'2027-01',fx.m,'查核','測試','noneThisMonth',false),calendarMonthIssues(fixture,'2027-01',fx.m).length)"),0);
   vm.runInContext("ingestRows(fx.punchRows,'synthetic.csv');commitAttendanceImport();fx.m=mrec(fixture.id);fx.h=fx.m.days.find(x=>x.status==='holiday');renderDay();",context);
   assert.match(get('parseMsg').innerHTML,/打卡匯入成功/);

@@ -49,6 +49,7 @@ run('mrec(e.id).days=[{...legacy,in:"16:00",out:"20:00"}];evidence()');
 assert.match(t('compute(e).leavePayrollBlocks.join(";")'),/計時出勤.*2027-02-18/,'existing true punch missing WH cannot confirm');
 assert.equal(t('setConfirm(e.id,true)'),false);
 run('mrec(e.id).days[0].hours=4;evidence()');
+t('verifiedLeaveClose(curYM(),{pending:0,needsProof:0,approved:0,unknown:0},Date.now())');
 assert.deepEqual(t('[compute(e).net,setConfirm(e.id,true)]'),[880,true],'explicit reviewed manual correction clears the guard');
 run('mrec(e.id).confirmed=false;mrec(e.id).snapshot=null;mrec(e.id).days=[legacy];evidence()');
 assert.match(t('compute(e).leavePayrollBlocks.join(";")'),/計時出勤.*2027-02-18/);

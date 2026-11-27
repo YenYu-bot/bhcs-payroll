@@ -35,7 +35,24 @@ async function jpeg(file){
     throw Error('照片過大，請裁切到證明範圍後再試。');
   }finally{im.close();}
 }
-export async function mountLeave(root,mode,integrate){
+export async function readLeaveCloseCounts(fs,requests,ym){
+  if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(ym))throw Error('薪資月份格式不正確。');
+  const counts={pending:0,needsProof:0,approved:0,unknown:0};
+  const criteria=[fs.where('scope','==','production'),fs.where('date','>=',ym+'-01'),fs.where('date','<=',ym+'-31'),fs.orderBy('date','desc')];
+  let cursor=null;
+  for(let page=0;page<100;page++){
+    const {docs}=await fs.getDocsFromServer(fs.query(requests,...criteria,...(cursor?[fs.startAfter(cursor)]:[]),fs.limit(50)));
+    for(const row of docs){
+      const status=row.data().status;
+      if(['applied','manual','rejected','withdrawn'].includes(status))continue;
+      counts[['pending','needsProof','approved'].includes(status)?status:'unknown']++;
+    }
+    if(docs.length<50)return counts;
+    cursor=docs.at(-1);
+  }
+  throw Error('正式假單數超過本次核對上限，尚未查完，不可月結。');
+}
+export async function mountLeave(root,mode,integrate,settlement){
   const cfg=await import('./config.mjs');
   const { staffOrigin, managerOrigin, config }=cfg;
   if(!config?.apiKey||config.projectId!=='bhcs-leave'||!/^https:\/\//.test(staffOrigin)||!/^https:\/\//.test(managerOrigin)||staffOrigin===managerOrigin||
@@ -53,7 +70,7 @@ export async function mountLeave(root,mode,integrate){
     await au.setPersistence(journalAuth,au.inMemoryPersistence);
   }
   async function signOutAll(){
-    loginRev++;clearTimeout(leaseTimer);leaseTimer=null;
+    settlement?.invalidate();loginRev++;clearTimeout(leaseTimer);leaseTimer=null;
     await Promise.all([au.signOut(auth),journalAuth?au.signOut(journalAuth):Promise.resolve()]);
   }
   let closed=false,epoch=0,rev=0,member=null,urls=new Set(),busy=false;
@@ -143,6 +160,7 @@ export async function mountLeave(root,mode,integrate){
   }
   async function syncPayroll(id,user,token){
     if(!integrate||!alive(token))throw Error('請從薪資後台的主管入口操作。');
+    settlement?.invalidate();
     const d=await get(ref(id));if(!d.exists()||d.data().scope!=='production'||d.data().status!=='approved')throw Error('假單已變更，請刷新清單。');
     if(!alive(token))return;
     const request=d.data();
@@ -183,6 +201,7 @@ export async function mountLeave(root,mode,integrate){
     }
     if(mode==='manager'&&['pending','needsProof'].includes(d.status)){
       const review=async(status,token)=>{
+        settlement?.invalidate();
         const p={status,proofRequired:status==='needsProof'||d.proofRequired,reviewAt:sent(),reviewBy:user.uid};
         await fs.updateDoc(ref(id),p);
         let msg=status==='needsProof'?'已標記待補證明。':'已標記未核准。';
@@ -199,6 +218,7 @@ export async function mountLeave(root,mode,integrate){
     if(mode==='manager'&&d.status==='approved'&&integrate){
       bar.append(button('重試帶入考勤',()=>action(async token=>{try{return await syncPayroll(id,user,token);}finally{if(alive(token))await refresh(token);}})),
         button('已人工處理',()=>{if(confirm('請先確認這筆假單已在考勤完成核對或有更正紀錄。確定標成已人工處理？'))action(async token=>{
+          settlement?.invalidate();
           await fs.updateDoc(ref(id),{status:'manual',settledBy:user.uid,settledAt:sent()});if(alive(token))await refresh(token);return '已標記人工處理；本操作不另寫入薪資。';
         });},true));
     }
@@ -318,7 +338,7 @@ export async function mountLeave(root,mode,integrate){
   let refreshList=async()=>{};
   const unsubscribe=au.onAuthStateChanged(auth,async user=>{
     const token=++epoch;rev++;
-    if(closed)return;
+    if(closed)return;settlement?.invalidate();
     if(!user){member=null;showLogin();return;}
     base();say('核對帳號權限…');
     try{
@@ -340,7 +360,7 @@ export async function mountLeave(root,mode,integrate){
         open:make('div'),closed:make('div')
       }:null;
       const month=mode==='manager'?make('input'):null;
-      if(month){month.type='month';month.value=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',timeZone:'Asia/Taipei'}).format(new Date());field(controls,'請假月份',month);}
+      if(month){month.type='month';month.value=settlement?.month()||new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',timeZone:'Asia/Taipei'}).format(new Date());field(controls,'請假月份',month);}
       let cursor=null;
       refreshList=async function(t,more=false){
         const current=++rev;
@@ -373,8 +393,18 @@ export async function mountLeave(root,mode,integrate){
         }
         if(response.size===50){const moreBtn=button('顯示更多',()=>action(t=>refreshList(t,true)),true);moreBtn.classList.add('lv-more');results.append(moreBtn);}
       };
-      if(month)month.onchange=()=>action(t=>refreshList(t));
-      controls.append(button('重新整理假單',()=>action(async t=>{await refreshList(t);return '已重新整理。';}),true),button('登出',()=>signOutAll(),true));
+      if(month)month.onchange=()=>{settlement?.invalidate();action(t=>refreshList(t));};
+      if(month&&settlement)controls.append(button('核對本月薪資',()=>action(async t=>{
+        const ym=settlement.month();
+        month.value=ym;
+        return settlement.check(ym,async()=>{
+          const counts=await readLeaveCloseCounts(fs,requests,ym);
+          if(!alive(t))throw Error('主管登入已變更，請重新核對。');
+          await refreshList(t);
+          return counts;
+        });
+      }),true));
+      controls.append(button('重新整理假單',()=>action(async t=>{settlement?.invalidate();await refreshList(t);return '已重新整理。';}),true),button('登出',()=>signOutAll(),true));
       if(mode==='staff')submitForm(user);
       list(mode==='staff'?'我的申請進度':'正式員工假單',results);
       await refreshList(token);if(alive(token))say('');
