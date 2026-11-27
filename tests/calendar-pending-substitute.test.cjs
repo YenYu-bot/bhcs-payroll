@@ -58,6 +58,7 @@ formRows(t('calendarPlan(e)'));
 get('calReviewer').value='合成核對者';get('calMonthNote').value='合成核對';get('calSpecial').checked=true;get('calRegular').checked=true;
 run('confirmCalendarDialog()');
 assert.equal(t('jr.calendarReview.verified'),true,'Jan modal monthly review really saves');
+run('verifiedLeaveClose(curYM(),{pending:0,needsProof:0,approved:0,unknown:0},Date.now())');
 assert.equal(t('setConfirm(e.id,true)'),true,'Jan actual payroll confirmation');
 const frozen=t('({jr,w:compute(e,month),label:employeeHolidayName(e,"2027-01-01")})');
 assert.equal(frozen.w.net,36000);

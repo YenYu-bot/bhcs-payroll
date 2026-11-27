@@ -41,6 +41,7 @@ assert.match(t('JSON.stringify(c().reviews)'),/^((?!holPay).)*$/,'statutory holi
 run("r.overrides['假日/特休照給']=0");
 assert.equal(t('setConfirm(e.id,true)'),false);
 run("r.overrides={};approve()");
+t('verifiedLeaveClose(curYM(),{pending:0,needsProof:0,approved:0,unknown:0},Date.now())');
 assert.equal(t('setConfirm(e.id,true)'),true);
 run('exportExcel();exportWord()');
 assert.ok(t('output.every(([bytes])=>bytes>0)'));

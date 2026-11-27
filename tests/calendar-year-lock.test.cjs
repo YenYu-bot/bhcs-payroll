@@ -37,6 +37,7 @@ recordCalendarReview(e,'2027-01',jr,'合成出勤一致','合成核對者','none
 jr.calendarReview.sig=JSON.stringify({source:calendarSourceSig(e),ym:'2027-01',...calendarMonthEvidence(jr)});
 `);
 assert.deepEqual(t('((r)=>[r.settlementBlocked,r.leavePayrollBlocks,r.pendingReviews])(computeLive(e,"2027-01",jr))'),[false,[],0]);
+t('verifiedLeaveClose(curYM(),{pending:0,needsProof:0,approved:0,unknown:0},Date.now())');
 assert.equal(t('setConfirm(e.id,true)'),true);
 const baseline = t('({annual:calendarPlan(e),january:jr,confirmedView:compute(e,"2027-01")})');
 assert.equal(baseline.january.confirmed,true);
