@@ -1979,28 +1979,49 @@ function otAdvanceBlock(e,c){
     '。只減少本次待付款，不減應發工資；超額不得抵底薪或跨月。 <button class="btn ghost tiny" onclick="editOtAdvance('+id+')">登記／更正</button>'+
     (p?' <button class="btn ghost tiny" onclick="editOtAdvance('+id+',true)">撤回</button>':'')+'</div>';
 }
-function bonusSeparateSig(e,ym,r){
+function bonusSourceMonths(raw,ym){
+  const months=Array.isArray(raw)?raw.slice():String(raw??'').trim().split(/[\s,、，]+/).filter(Boolean);
+  if(!months.length||months.length>24||months.some(m=>typeof m!=='string'||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(m)||m>=ym)||
+     new Set(months).size!==months.length)return null;
+  return months.sort();
+}
+function bonusSourceFingerprint(eid,month){
+  const r=state.months[month]?.[eid];
+  if(!r)return null; // External evidence has an explicit reference; a later in-system record triggers recheck.
+  const {days,otEvents,att,annualEvents,lateEvents,absChoice,schoolPay,overrides,items}=r;
+  const source=r.confirmed&&r.snapshot?['confirmed',r.confirmedAt,r.snapshot]:
+    ['draft',days||[],otEvents||[],att||{},annualEvents||[],lateEvents||[],absChoice||{},schoolPay??null,overrides||{},items||[]];
+  return hashStr(JSON.stringify(source));
+}
+function bonusSeparateSig(e,ym,r,months){
   const b=r.schoolPay;
-  return JSON.stringify([ym,e.id,b?.mode,b?.bonus,b?.bonusNote,b?.bonusBasis,e.laborGrade,e.pensionWage,e.healthGrade,e.insAuto,e.pensionSelf,e.base,e.fixedItems]);
+  return JSON.stringify([2,ym,e.id,b?.mode,b?.bonus,b?.bonusNote,b?.bonusBasis,e.laborGrade,e.pensionWage,e.healthGrade,e.insAuto,e.pensionSelf,e.base,e.fixedItems,
+    months.map(m=>[m,bonusSourceFingerprint(e.id,m)])]);
 }
 function validBonusSeparateReview(e,ym,r){
-  const x=r.bonusSeparateReview;
-  return !!x&&x.sig===bonusSeparateSig(e,ym,r)&&typeof x.otNote==='string'&&!!x.otNote.trim()&&
+  const x=r?.bonusSeparateReview,months=bonusSourceMonths(x?.months,ym);
+  return !!x&&!!months&&x.sig===bonusSeparateSig(e,ym,r,months)&&typeof x.otNote==='string'&&!!x.otNote.trim()&&
     typeof x.insNote==='string'&&!!x.insNote.trim()&&Number.isFinite(Date.parse(x.at));
 }
-function recordBonusSeparateReview(e,ym,r,otNote,insNote){
+function recordBonusSeparateReview(e,ym,r,rawMonths,otNote,insNote){
   if(r.confirmed||r.schoolPay?.bonusBasis!=='separate'||!(r.schoolPay.bonus>0))throw Error('僅能核對未確認且另歸屬的續班獎金。');
+  const months=bonusSourceMonths(rawMonths,ym);
+  if(!months)throw Error('請列出 1～24 個較早的歸屬月份（YYYY-MM，不重複）。');
   const a=String(otNote??'').trim(),b=String(insNote??'').trim();
   if(!a||!b||a.length>400||b.length>400)throw Error('請填兩項核對依據，各 1～400 字。');
-  r.bonusSeparateReview={sig:bonusSeparateSig(e,ym,r),otNote:a,insNote:b,at:new Date().toISOString()};
+  r.bonusSeparateReview={months,sig:bonusSeparateSig(e,ym,r,months),otNote:a,insNote:b,at:new Date().toISOString()};
 }
 function editBonusSeparateReview(id){
   const e=emp(id),ym=curYM(),r=e&&mrec(id,ym);
   if(!r||r.confirmed||!payrollOutputSessionReady())return;
-  const a=prompt('請填實際歸屬月份、逐月加班差額與補發依據；無差額請填理由。',r.bonusSeparateReview?.otNote??'');if(a==null)return;
-  const b=prompt('請填已核對的投保與勞退提繳級距、是否需調整及依據。勿輸入個人識別碼。',r.bonusSeparateReview?.insNote??'');if(b==null)return;
+  const old=r.bonusSeparateReview;
+  const months=prompt('請列出歸屬月份（YYYY-MM，以逗號分隔；只列比本月早的月份）',old?.months?.join?.(', ')??'');if(months==null)return;
+  // Do not prefill obsolete evidence after an attributed record changes.
+  const current=validBonusSeparateReview(e,ym,r)&&JSON.stringify(bonusSourceMonths(months,ym))===JSON.stringify(old.months);
+  const a=prompt('請填各歸屬月加班差額及補發依據；無差額請填理由。若在系統外核算，請填明細編號及版本／日期。',current?old.otNote:'');if(a==null)return;
+  const b=prompt('請填已核對的投保與勞退提繳級距、是否需調整及依據。勿輸入個人識別碼。',current?old.insNote:'');if(b==null)return;
   if(!confirm('確認已完成逐月加班差額和投保／勞退提繳核對？本操作不會自動補發或改級距。'))return;
-  try{recordBonusSeparateReview(e,ym,r,a,b);addLog('核對另歸屬續班獎金',a+'；投保與勞退：'+b,ym,id);save();renderSlips();}
+  try{recordBonusSeparateReview(e,ym,r,months,a,b);addLog('核對另歸屬續班獎金','歸屬 '+r.bonusSeparateReview.months.join('、')+'；'+a+'；投保與勞退：'+b,ym,id);save();renderSlips();}
   catch(err){toast(err.message);}
 }
 function writeSchoolPay(form,remove){
@@ -2034,7 +2055,7 @@ function schoolPayBlock(e,c){
   const rec=peekRec(e.id,ym);
   const separate=cfg?.bonusBasis==='separate'&&cfg.bonus>0?
     '<p>請逐月核對加班差額，以及適用投保與勞退提繳；此處不會自動調整。'+
-    (validBonusSeparateReview(e,ym,rec)?' 已核對。':' 尚未核對，不可確認。')+
+    (validBonusSeparateReview(e,ym,rec)?' 已核對 '+esc(rec.bonusSeparateReview.months.join('、'))+'。':rec?.bonusSeparateReview?' 歸屬月份或核對依據已有變更，須重新核對。':' 尚未核對，不可確認。')+
     ' <button type="button" class="btn ghost tiny" onclick="editBonusSeparateReview('+esc(JSON.stringify(e.id))+')">核對另歸屬獎金</button></p>':'';
   const num=(key,value,optional=false)=>'<input class="num" type="number" name="'+key+'" min="0" max="1000000" step="1" value="'+esc(value??'')+'"'+(optional?'':' required')+'>';
   const bonus=!/-(?:06|12)$/.test(ym)?'':`<div class="f"><label>續班獎金（6／12 月；依已繳新學期續班費名冊）${num('bonus',cfg?.bonus,true)}</label></div>
